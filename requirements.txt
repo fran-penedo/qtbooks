@@ -1,0 +1,16 @@
+-e .
+
+# Use -e .[extras] if developing a setup with extras
+
+# tests
+nose
+coverage
+
+#linting
+flake8
+typing-extensions
+mypy
+
+#refactoring
+# importmagic
+# epc

@@ -1,0 +1,6 @@
+.coverage
+cover/
+*.pyc
+tags
+*.egg-info
+/.noseids
