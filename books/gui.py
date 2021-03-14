@@ -1,4 +1,5 @@
 import sys
+import datetime
 from typing import Optional
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc
@@ -6,7 +7,7 @@ from books import model
 
 
 class App(qtw.QMainWindow):
-    def __init__(self, controller: model.Controller, user: int) -> None:
+    def __init__(self, controller: model.Controller) -> None:
         super().__init__()
         self.title = "Pyqtw.Qt5 simple window - pythonspot.com"
         self.left = 10
@@ -14,7 +15,6 @@ class App(qtw.QMainWindow):
         self.w = 640
         self.h = 480
         self.controller = controller
-        self.user = user
         self.initUI()
 
     def initUI(self) -> None:
@@ -34,7 +34,12 @@ class App(qtw.QMainWindow):
 
     def edit_book(self, i: int, j: int) -> None:
         book_id = self.table.item(i, 0).text()
-        bookdiag = BookDialog(self.user, self.controller.get_book(int(book_id))).exec()
+        bookdiag = BookDialog(self.controller, self.controller.get_book(int(book_id)))
+        bookdiag.exec()
+        book = bookdiag.get_book()
+        print(
+            f"{book}\n{book.authors}\n{book.genres}\n{book.readings}\n{book.wishlists}"
+        )
 
 
 class Table(qtw.QTableWidget):
@@ -49,7 +54,9 @@ class Table(qtw.QTableWidget):
 
 
 class BookDialog(qtw.QDialog):
-    def __init__(self, user: int, book: Optional[model.Book] = None) -> None:
+    def __init__(
+        self, controller: model.Controller, book: Optional[model.Book] = None
+    ) -> None:
         super().__init__()
         self.title = (
             "Add a new book" if book is None else f"Editing book '{book.title}'"
@@ -58,8 +65,8 @@ class BookDialog(qtw.QDialog):
         self.top = 10
         self.w = 640
         self.h = 480
-        self.user = user
         self.book = book
+        self.controller = controller
         self.initUI()
 
     def initUI(self) -> None:
@@ -84,6 +91,8 @@ class BookDialog(qtw.QDialog):
         left_form.addRow("Genre", self.wgenre)
         self.wfirst = qtw.QLineEdit()
         left_form.addRow("First Published", self.wfirst)
+        self.wedition = qtw.QLineEdit()
+        left_form.addRow("Edition", self.wedition)
         self.wnotes = qtw.QTextEdit()
         left_form.addRow("Notes", self.wnotes)
         self.left_form = left_form
@@ -135,7 +144,67 @@ class BookDialog(qtw.QDialog):
         self.set_read_widgets_enabled(self.wread.isChecked())
 
     def get_book(self) -> model.Book:
-        return None
+        title = self.wtitle.text()
+        firstpub = int(self.wfirst.text())
+        edition = int(self.wedition.text())
+        notes = self.wnotes.toPlainText()
+
+        authors = self.wauthor.get_all()
+        genres = self.wgenre.get_all()
+
+        read = self.wread.isChecked()
+        start = self.wstart.date().toPyDate()
+        end = self.wend.date().toPyDate()
+        dropped = self.wdropped.isChecked()
+        read_notes = self.wreadnotes.toPlainText()
+
+        toread = self.wwtr.isChecked()
+
+        if self.book is not None:
+            book = self.book
+            book.title = title
+            book.first_published = firstpub
+            book.edition = edition
+            book.notes = notes
+        else:
+            added = datetime.date.today()
+            book = model.Book(-1, title, firstpub, edition, added, notes)
+
+        if len(authors) != len(book.authors) or any(
+            a != b.author.name for a, b in zip(authors, book.authors)
+        ):
+            book.authors = [
+                self.controller.get_or_make_book_author(book, name) for name in authors
+            ]
+
+        if len(genres) != len(book.genres) or any(
+            a != b.genre.name for a, b in zip(genres, book.genres)
+        ):
+            book.genres = [
+                self.controller.get_or_make_book_genre(book, name) for name in genres
+            ]
+
+        if read:
+            if len(book.readings) == 1:
+                book.readings[0].start = start
+                book.readings[0].end = end
+                book.readings[0].dropped = dropped
+                book.readings[0].notes = read_notes
+            else:
+                book.readings = [
+                    model.BookReader(
+                        -1, self.controller.user, book, start, end, dropped, read_notes
+                    )
+                ]
+        elif len(book.readings) == 1:
+            book.readings = []
+
+        if toread and len(book.wishlists) == 0:
+            book.wishlists = [model.Wishlist(-1, self.controller.user, book)]
+        elif not toread and len(book.wishlists) == 1:
+            book.wishlists = []
+
+        return book
 
     def update_data(self) -> None:
         if self.book is None:
@@ -143,6 +212,7 @@ class BookDialog(qtw.QDialog):
 
         self.wtitle.setText(self.book.title)
         self.wfirst.setText(f"{self.book.first_published}")
+        self.wedition.setText(f"{self.book.edition}")
         self.wnotes.setText(self.book.notes)
 
         self.wauthor.clear()
@@ -150,16 +220,37 @@ class BookDialog(qtw.QDialog):
             self.wauthor.make_combo("")
         else:
             for author in self.book.authors:
-                self.wauthor.make_combo(author.name)
+                self.wauthor.make_combo(author.author.name)
+        self.wgenre.clear()
         if len(self.book.genres) == 0:
             self.wgenre.make_combo("")
         else:
             for genre in self.book.genres:
-                self.wgenre.make_combo(genre.name)
+                self.wgenre.make_combo(genre.genre.name)
 
-        # read = next(reading self.user == reader.id for reader in self.book.readers)
-        # self.wread.setChecked(read)
-        # if read:
+        try:
+            reading = next(
+                r for r in self.book.readings if self.controller.user.id == r.reader.id
+            )
+            self.wread.setChecked(True)
+            self.wstart.setDate(reading.start)
+            self.wend.setDate(reading.end)
+            self.wdropped.setChecked(reading.dropped)
+            self.wreadnotes.setText(reading.notes)
+        except StopIteration:
+            pass
+        except:
+            raise
+
+        try:
+            wishlist = next(
+                r for r in self.book.wishlists if self.controller.user.id == r.reader.id
+            )
+            self.wwtr.setChecked(True)
+        except StopIteration:
+            pass
+        except:
+            raise
 
 
 class ComboWidget(qtw.QWidget):
@@ -189,6 +280,12 @@ class ComboWidget(qtw.QWidget):
         while self.combos.takeAt(0):
             pass
 
+    def get_all(self) -> list[str]:
+        return [
+            self.combos.itemAt(i).widget().layout().itemAt(0).widget().currentText()
+            for i in range(self.combos.count())
+        ]
+
     def make_combo(self, text: str = "") -> None:
         combo_widget = qtw.QWidget()
         combo = qtw.QComboBox()
@@ -196,8 +293,6 @@ class ComboWidget(qtw.QWidget):
         combo.setCurrentText(text)
         remove = qtw.QPushButton("-")
         remove.setFixedSize(22, 22)
-        # FIXME last removed fails
-        remove.clicked.connect(lambda x: self.combos.removeWidget(combo_widget))  # type: ignore
 
         layout = qtw.QHBoxLayout()
         layout.addWidget(combo)
@@ -206,13 +301,21 @@ class ComboWidget(qtw.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         combo_widget.setLayout(layout)
 
+        def rem(x):
+            if self.combos.count() > 1:
+                self.combos.removeWidget(combo_widget)
+                qtw.QWidget().setLayout(layout)
+            else:
+                combo.setCurrentText("")
+
+        remove.clicked.connect(rem)  # type: ignore
         self.combos.addWidget(combo_widget)
 
 
 def main() -> None:
     app = qtw.QApplication(sys.argv)
-    controller = model.Controller("test.db")
-    window = App(controller, 1)
+    controller = model.Controller("test.db", 1)
+    window = App(controller)
     sys.exit(app.exec_())
 
 

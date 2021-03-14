@@ -1,9 +1,29 @@
+import datetime
+import json
+import os
 import sqlite3 as sqlite
 from sqlite3 import Connection, Row
-import datetime
-import os
+from typing import Optional, Union
 
 import attr
+
+
+def _from_dict(cls, obj):
+    if obj is None:
+        return None
+    elif isinstance(obj, cls):
+        return obj
+    else:
+        return cls(**json.loads(obj))
+
+
+def _convert_date(date: Union[datetime.date, str]) -> Optional[datetime.date]:
+    if date is None:
+        return None
+    elif isinstance(date, datetime.date):
+        return date
+    else:
+        return datetime.date.fromtimestamp(float(date))
 
 
 @attr.s(auto_attribs=True)
@@ -12,32 +32,56 @@ class Book(object):
     title: str
     first_published: int
     edition: int
-    added: datetime.date
+    added: datetime.date = attr.ib(converter=_convert_date)
     notes: str
 
     @property
-    def authors(self) -> list["Author"]:
+    def authors(self) -> list["BookAuthor"]:
         return self._authors
 
     @authors.setter
-    def authors(self, value: list["Author"]) -> None:
+    def authors(self, value: list["BookAuthor"]) -> None:
         self._authors = value
+        self.has_dirty_relations = True
 
     @property
-    def genres(self) -> list["Genre"]:
+    def genres(self) -> list["BookGenre"]:
         return self._genres
 
     @genres.setter
-    def genres(self, value: list["Genre"]) -> None:
+    def genres(self, value: list["BookGenre"]) -> None:
         self._genres = value
+        self.has_dirty_relations = True
 
     @property
-    def readers(self) -> list["Reader"]:
-        return self._readers
+    def readings(self) -> list["BookReader"]:
+        return self._readings
 
-    @readers.setter
-    def readers(self, value: list["Reader"]) -> None:
-        self._readers = value
+    @readings.setter
+    def readings(self, value: list["BookReader"]) -> None:
+        self._readings = value
+        self.has_dirty_relations = True
+
+    @property
+    def wishlists(self) -> list["Wishlist"]:
+        return self._wishlists
+
+    @wishlists.setter
+    def wishlists(self, value: list["Wishlist"]) -> None:
+        self._wishlists = value
+        self.has_dirty_relations = True
+
+    @property
+    def has_dirty_relations(self) -> bool:
+        return self._has_dirty_relations
+
+    @has_dirty_relations.setter
+    def has_dirty_relations(self, value: bool) -> None:
+        self._has_dirty_relations = value
+
+
+def book_from_dict(obj: Union[str, Book]) -> Book:
+    return _from_dict(Book, obj)
 
 
 @attr.s(auto_attribs=True)
@@ -46,10 +90,18 @@ class Author(object):
     name: str
 
 
+def author_from_dict(obj: Union[str, Author]) -> Author:
+    return _from_dict(Author, obj)
+
+
 @attr.s(auto_attribs=True)
 class Genre(object):
     id: int
     name: str
+
+
+def genre_from_dict(obj: Union[str, Genre]) -> Genre:
+    return _from_dict(Genre, obj)
 
 
 @attr.s(auto_attribs=True)
@@ -58,33 +110,41 @@ class Reader(object):
     name: str
 
 
+def reader_from_dict(obj: Union[str, Reader]) -> Reader:
+    return _from_dict(Reader, obj)
+
+
 @attr.s(auto_attribs=True)
 class Publisher(object):
     id: int
     name: str
 
 
+def publisher_from_dict(obj: Union[str, Publisher]) -> Publisher:
+    return _from_dict(Publisher, obj)
+
+
 @attr.s(auto_attribs=True)
 class BookGenre(object):
     id: int
-    book: Book
-    genre: Genre
+    book: Book = attr.ib(converter=book_from_dict)
+    genre: Genre = attr.ib(converter=genre_from_dict)
 
 
 @attr.s(auto_attribs=True)
 class BookAuthor(object):
     id: int
-    book: Book
-    author: Author
+    book: Book = attr.ib(converter=book_from_dict)
+    author: Author = attr.ib(converter=author_from_dict)
 
 
 @attr.s(auto_attribs=True)
 class BookReader(object):
     id: int
-    reader: Reader
-    book: Book
-    start: datetime.date
-    end: datetime.date
+    reader: Reader = attr.ib(converter=reader_from_dict)
+    book: Book = attr.ib(converter=book_from_dict)
+    start: datetime.date = attr.ib(converter=_convert_date)
+    end: datetime.date = attr.ib(converter=_convert_date)
     dropped: bool
     notes: str
 
@@ -92,8 +152,8 @@ class BookReader(object):
 @attr.s(auto_attribs=True)
 class Wishlist(object):
     id: int
-    reader: Reader
-    book: Book
+    reader: Reader = attr.ib(converter=reader_from_dict)
+    book: Book = attr.ib(converter=book_from_dict)
 
 
 def create_db(fn: str) -> Connection:
@@ -170,6 +230,12 @@ def make_test_db(fn: str = ":memory:") -> Connection:
             insert into BookAuthors(book, author)
             values (1, 1), (1, 2);
 
+            insert into BookReaders(book, reader, start, end, dropped, notes)
+            values (1, 1, strftime('%s', date('2021-01-05')), strftime('%s', date('2021-01-10')), False, Null);
+
+            insert into Wishlists(reader, book)
+            values (1, 1);
+
             """
         )
 
@@ -177,8 +243,9 @@ def make_test_db(fn: str = ":memory:") -> Connection:
 
 
 class Controller(object):
-    def __init__(self, fn: str) -> None:
-        self.db = create_db(fn)
+    def __init__(self, fn: str, user_id: int) -> None:
+        self.db = make_test_db(fn)
+        self.user = self.get_reader(user_id)
 
     def get_all_books(self) -> list[Row]:
         rows = self.db.execute(
@@ -208,27 +275,60 @@ class Controller(object):
                 "select * from Books where id = ?", [id]
             ).fetchone()
             author_rows = self.db.execute(
-                """select Authors.id as id, name
+                """select BookAuthors.id as id,
+                          json_object('id', Authors.id, 'name', name) as author
                 from BookAuthors join Authors on BookAuthors.author = Authors.id
                 where BookAuthors.book = ?""",
                 [id],
             ).fetchall()
             genre_rows = self.db.execute(
-                """select Genres.id as id, name
+                """select BookGenres.id as id,
+                          json_object('id', Genres.id, 'name', name) as genre
                 from BookGenres join Genres on BookGenres.genre = Genres.id
                 where BookGenres.book = ?""",
                 [id],
             ).fetchall()
-            reader_rows = self.db.execute(
-                """select Readers.id as id, name
+            reading_rows = self.db.execute(
+                """select BookReaders.id as id,
+                          json_object('id', Readers.id, 'name', name) as reader,
+                          start, end, dropped, notes
                 from BookReaders join Readers on BookReaders.reader = Readers.id
                 where BookReaders.book = ?""",
+                [id],
+            ).fetchall()
+            wishlist_rows = self.db.execute(
+                """select Wishlists.id as id,
+                          json_object('id', Readers.id, 'name', name) as reader
+                from Wishlists join Readers on Wishlists.reader = Readers.id
+                where Wishlists.book = ?""",
                 [id],
             ).fetchall()
         except Exception as e:
             raise e
         book = Book(**book_row)
-        book.authors = [Author(**row) for row in author_rows]
-        book.genres = [Genre(**row) for row in genre_rows]
-        book.readers = [Reader(**row) for row in reader_rows]
+        book.authors = [BookAuthor(book=book, **row) for row in author_rows]
+        book.genres = [BookGenre(book=book, **row) for row in genre_rows]
+        book.readings = [BookReader(book=book, **row) for row in reading_rows]
+        book.wishlists = [Wishlist(book=book, **row) for row in wishlist_rows]
+        book.has_dirty_relations = False
         return book
+
+    def get_reader(self, id: int) -> Reader:
+        row = self.db.execute("select * from Readers where id = ?", [id]).fetchone()
+        return Reader(**row)
+
+    def get_or_make_book_author(self, book: Book, name: str) -> BookAuthor:
+        row = self.db.execute("select * from Authors where name = ?", [id]).fetchone()
+        if row is None:
+            author = Author(-1, name)
+        else:
+            author = Author(**row)
+        return BookAuthor(-1, book=book, author=author)
+
+    def get_or_make_book_genre(self, book: Book, name: str) -> BookGenre:
+        row = self.db.execute("select * from Genres where name = ?", [id]).fetchone()
+        if row is None:
+            genre = Genre(-1, name)
+        else:
+            genre = Genre(**row)
+        return BookGenre(-1, book=book, genre=genre)
