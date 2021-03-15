@@ -2,7 +2,7 @@ import sys
 import datetime
 from typing import Optional
 
-from PyQt5 import QtWidgets as qtw, QtCore as qtc
+from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
 from books import model
 
 
@@ -20,26 +20,39 @@ class App(qtw.QMainWindow):
     def initUI(self) -> None:
         self.setWindowTitle(self.title)
         self.setGeometry(self.left, self.top, self.w, self.h)
+        self.set_shortcuts()
 
         self.table = Table()
-        rows = self.controller.get_all_books()
-        self.table.set_data(rows, rows[0].keys())
+        self.update_table()
         self.table.cellDoubleClicked.connect(self.edit_book)  # type: ignore
 
         self.setCentralWidget(self.table)
-
-        # bookdiag = BookDialog().exec()
 
         self.show()
 
     def edit_book(self, i: int, j: int) -> None:
         book_id = self.table.item(i, 0).text()
         bookdiag = BookDialog(self.controller, self.controller.get_book(int(book_id)))
-        bookdiag.exec()
-        book = bookdiag.get_book()
-        print(
-            f"{book}\n{book.authors}\n{book.genres}\n{book.readings}\n{book.wishlists}"
-        )
+        if bookdiag.exec() == qtw.QDialog.Accepted:
+            book = bookdiag.get_book()
+            self.controller.update_book(book)
+            self.update_table()
+
+    def add_book(self) -> None:
+        bookdiag = BookDialog(self.controller)
+        if bookdiag.exec() == qtw.QDialog.Accepted:
+            book = bookdiag.get_book()
+            self.controller.add_book(book)
+            self.update_table()
+
+    def update_table(self) -> None:
+        self.table.clear()
+        rows = self.controller.get_all_books()
+        self.table.set_data(rows, rows[0].keys())
+
+    def set_shortcuts(self) -> None:
+        add_new_book = qtw.QShortcut(qtg.QKeySequence("a"), self)
+        add_new_book.activated.connect(self.add_book)  # type: ignore
 
 
 class Table(qtw.QTableWidget):
@@ -85,15 +98,18 @@ class BookDialog(qtw.QDialog):
         left_form = qtw.QFormLayout()
         self.wtitle = qtw.QLineEdit()
         left_form.addRow("Title", self.wtitle)
-        self.wauthor = ComboWidget()
+        self.wauthor = ComboWidget(self.controller.get_all_authors())
+        self.wauthor.combobox_made.connect(self.set_tab_order)
         left_form.addRow("Author", self.wauthor)
-        self.wgenre = ComboWidget()
+        self.wgenre = ComboWidget(self.controller.get_all_genres())
+        self.wgenre.combobox_made.connect(self.set_tab_order)
         left_form.addRow("Genre", self.wgenre)
         self.wfirst = qtw.QLineEdit()
         left_form.addRow("First Published", self.wfirst)
         self.wedition = qtw.QLineEdit()
         left_form.addRow("Edition", self.wedition)
         self.wnotes = qtw.QTextEdit()
+        self.wnotes.setTabChangesFocus(True)
         left_form.addRow("Notes", self.wnotes)
         self.left_form = left_form
 
@@ -112,6 +128,7 @@ class BookDialog(qtw.QDialog):
         self.wdropped = qtw.QCheckBox()
         right_form.addRow("Dropped", self.wdropped)
         self.wreadnotes = qtw.QTextEdit()
+        self.wreadnotes.setTabChangesFocus(True)
         right_form.addRow("Notes", self.wreadnotes)
         self.read_widgets = [self.wstart, self.wend, self.wdropped, self.wreadnotes]
         self.set_read_widgets_enabled(False)
@@ -134,13 +151,34 @@ class BookDialog(qtw.QDialog):
         self.setLayout(top_layout)
 
         self.update_data()
+        self.set_tab_order()
         self.show()
 
-    def set_read_widgets_enabled(self, enable: bool):
+    def set_tab_order(self) -> None:
+        order = [
+            self.wtitle,
+            *self.wauthor.get_all_combos(),
+            *self.wgenre.get_all_combos(),
+            self.wfirst,
+            self.wedition,
+            self.wnotes,
+            self.wread,
+            self.wstart,
+            self.wend,
+            self.wdropped,
+            self.wreadnotes,
+            self.wwtr,
+            self.buttons,
+        ]
+
+        for i in range(len(order) - 1):
+            qtw.QWidget.setTabOrder(order[i], order[i + 1])  # type: ignore
+
+    def set_read_widgets_enabled(self, enable: bool) -> None:
         for w in self.read_widgets:
             w.setEnabled(enable)
 
-    def read_changed(self):
+    def read_changed(self) -> None:
         self.set_read_widgets_enabled(self.wread.isChecked())
 
     def get_book(self) -> model.Book:
@@ -168,7 +206,7 @@ class BookDialog(qtw.QDialog):
             book.notes = notes
         else:
             added = datetime.date.today()
-            book = model.Book(-1, title, firstpub, edition, added, notes)
+            book = model.Book(None, title, firstpub, edition, added, notes)
 
         if len(authors) != len(book.authors) or any(
             a != b.author.name for a, b in zip(authors, book.authors)
@@ -193,14 +231,20 @@ class BookDialog(qtw.QDialog):
             else:
                 book.readings = [
                     model.BookReader(
-                        -1, self.controller.user, book, start, end, dropped, read_notes
+                        None,
+                        self.controller.user,
+                        book,
+                        start,
+                        end,
+                        dropped,
+                        read_notes,
                     )
                 ]
         elif len(book.readings) == 1:
             book.readings = []
 
         if toread and len(book.wishlists) == 0:
-            book.wishlists = [model.Wishlist(-1, self.controller.user, book)]
+            book.wishlists = [model.Wishlist(None, self.controller.user, book)]
         elif not toread and len(book.wishlists) == 1:
             book.wishlists = []
 
@@ -208,6 +252,8 @@ class BookDialog(qtw.QDialog):
 
     def update_data(self) -> None:
         if self.book is None:
+            self.wauthor.make_combo("")
+            self.wgenre.make_combo("")
             return
 
         self.wtitle.setText(self.book.title)
@@ -254,11 +300,16 @@ class BookDialog(qtw.QDialog):
 
 
 class ComboWidget(qtw.QWidget):
-    def __init__(self) -> None:
+    combobox_made = qtc.pyqtSignal()
+
+    def __init__(self, options: list[str]) -> None:
         super().__init__()
+        self.options = options
+
         self.add = qtw.QPushButton("+")
         self.add.clicked.connect(lambda x: self.make_combo())  # type: ignore
         self.add.setFixedSize(22, 22)
+        self.add.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)
         self.addgroup = qtw.QVBoxLayout()
         self.addgroup.addWidget(self.add)
         # addgroup.addStretch()
@@ -281,18 +332,33 @@ class ComboWidget(qtw.QWidget):
             pass
 
     def get_all(self) -> list[str]:
+        return [c.currentText() for c in self.get_all_combos()]
+
+    def get_all_combos(self) -> list[qtw.QComboBox]:
         return [
-            self.combos.itemAt(i).widget().layout().itemAt(0).widget().currentText()
-            for i in range(self.combos.count())
+            self.combos.itemAt(i).widget().combo for i in range(self.combos.count())
         ]
 
-    def make_combo(self, text: str = "") -> None:
+    class ComboBox(qtw.QComboBox):
+        def __init__(self, widget: "ComboWidget", *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.combo_widget = widget
+
+        def keyPressEvent(self, e: qtg.QKeyEvent) -> None:
+            if e.matches(qtg.QKeySequence.StandardKey.InsertLineSeparator):
+                self.combo_widget.make_combo(focus=True)
+            else:
+                super().keyPressEvent(e)
+
+    def make_combo(self, text: str = "", focus: bool = False) -> None:
         combo_widget = qtw.QWidget()
-        combo = qtw.QComboBox()
+        combo = ComboWidget.ComboBox(self)
+        combo.insertItems(0, self.options)
         combo.setEditable(True)
         combo.setCurrentText(text)
         remove = qtw.QPushButton("-")
         remove.setFixedSize(22, 22)
+        remove.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)
 
         layout = qtw.QHBoxLayout()
         layout.addWidget(combo)
@@ -300,6 +366,8 @@ class ComboWidget(qtw.QWidget):
         layout.setSpacing(0)
         layout.setContentsMargins(0, 0, 0, 0)
         combo_widget.setLayout(layout)
+        combo_widget.combo = combo
+        combo_widget.remove = remove
 
         def rem(x):
             if self.combos.count() > 1:
@@ -310,6 +378,9 @@ class ComboWidget(qtw.QWidget):
 
         remove.clicked.connect(rem)  # type: ignore
         self.combos.addWidget(combo_widget)
+        if focus:
+            combo.setFocus()
+        self.combobox_made.emit()
 
 
 def main() -> None:

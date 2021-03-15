@@ -1,7 +1,8 @@
-import datetime
 import json
+import datetime
 import os
 import sqlite3 as sqlite
+from functools import lru_cache
 from sqlite3 import Connection, Row
 from typing import Optional, Union
 
@@ -27,13 +28,30 @@ def _convert_date(date: Union[datetime.date, str]) -> Optional[datetime.date]:
 
 
 @attr.s(auto_attribs=True)
-class Book(object):
-    id: int
+class TableI(object):
+    id: Optional[int]
+
+    def values(self) -> list[str]:
+        return [_value_from_att(self, att) for att in attr.fields(self.__class__)]
+
+    def columns(self) -> list[str]:
+        return [att.name for att in attr.fields(self.__class__)]
+
+
+@attr.s(auto_attribs=True)
+class Book(TableI):
     title: str
     first_published: int
     edition: int
     added: datetime.date = attr.ib(converter=_convert_date)
     notes: str
+
+    def __attrs_post_init__(self) -> None:
+        self.authors = []
+        self.genres = []
+        self.readings = []
+        self.wishlists = []
+        self.has_dirty_relations = False
 
     @property
     def authors(self) -> list["BookAuthor"]:
@@ -85,8 +103,7 @@ def book_from_dict(obj: Union[str, Book]) -> Book:
 
 
 @attr.s(auto_attribs=True)
-class Author(object):
-    id: int
+class Author(TableI):
     name: str
 
 
@@ -95,8 +112,7 @@ def author_from_dict(obj: Union[str, Author]) -> Author:
 
 
 @attr.s(auto_attribs=True)
-class Genre(object):
-    id: int
+class Genre(TableI):
     name: str
 
 
@@ -105,8 +121,7 @@ def genre_from_dict(obj: Union[str, Genre]) -> Genre:
 
 
 @attr.s(auto_attribs=True)
-class Reader(object):
-    id: int
+class Reader(TableI):
     name: str
 
 
@@ -115,8 +130,7 @@ def reader_from_dict(obj: Union[str, Reader]) -> Reader:
 
 
 @attr.s(auto_attribs=True)
-class Publisher(object):
-    id: int
+class Publisher(TableI):
     name: str
 
 
@@ -125,22 +139,19 @@ def publisher_from_dict(obj: Union[str, Publisher]) -> Publisher:
 
 
 @attr.s(auto_attribs=True)
-class BookGenre(object):
-    id: int
+class BookGenre(TableI):
     book: Book = attr.ib(converter=book_from_dict)
     genre: Genre = attr.ib(converter=genre_from_dict)
 
 
 @attr.s(auto_attribs=True)
-class BookAuthor(object):
-    id: int
+class BookAuthor(TableI):
     book: Book = attr.ib(converter=book_from_dict)
     author: Author = attr.ib(converter=author_from_dict)
 
 
 @attr.s(auto_attribs=True)
-class BookReader(object):
-    id: int
+class BookReader(TableI):
     reader: Reader = attr.ib(converter=reader_from_dict)
     book: Book = attr.ib(converter=book_from_dict)
     start: datetime.date = attr.ib(converter=_convert_date)
@@ -150,10 +161,34 @@ class BookReader(object):
 
 
 @attr.s(auto_attribs=True)
-class Wishlist(object):
-    id: int
+class Wishlist(TableI):
     reader: Reader = attr.ib(converter=reader_from_dict)
     book: Book = attr.ib(converter=book_from_dict)
+
+
+TABLES = [
+    Book,
+    Author,
+    Genre,
+    Reader,
+    Publisher,
+    BookGenre,
+    BookAuthor,
+    BookReader,
+    Wishlist,
+]
+
+
+def _value_from_att(obj: TableI, att: attr.Attribute) -> str:
+    v = getattr(obj, att.name)
+    if v is None:
+        return "NULL"
+    elif att.type in TABLES:
+        return f"'{v.id}'"
+    elif att.type is datetime.date:
+        return v.strftime("'%s'")
+    else:
+        return f"'{v}'"
 
 
 def create_db(fn: str) -> Connection:
@@ -170,28 +205,16 @@ def create_db(fn: str) -> Connection:
 
 
 def init_db(db: Connection):
-    classes = [
-        Book,
-        Author,
-        Genre,
-        Reader,
-        Publisher,
-        BookGenre,
-        BookAuthor,
-        BookReader,
-        Wishlist,
-    ]
-
     def _def_col(att: attr.Attribute) -> str:
         if att.name == "id":
             return "id INTEGER PRIMARY KEY AUTOINCREMENT"
-        elif att.type in classes:
-            return f"{att.name} REFERENCES {att.type.__name__}s (id)"
+        elif att.type in TABLES:
+            return f"{att.name} REFERENCES {att.type.__name__}s (id) ON DELETE CASCADE"
         else:
             return f"{att.name}"
 
     with db:
-        for c in classes:
+        for c in TABLES:
             cols = " , ".join(_def_col(att) for att in attr.fields(c))
             db.execute(f"CREATE TABLE {c.__name__}s({cols})")
 
@@ -247,6 +270,7 @@ class Controller(object):
         self.db = make_test_db(fn)
         self.user = self.get_reader(user_id)
 
+    @lru_cache
     def get_all_books(self) -> list[Row]:
         rows = self.db.execute(
             """
@@ -269,6 +293,7 @@ class Controller(object):
 
         return rows
 
+    @lru_cache
     def get_book(self, id: int):
         try:
             book_row = self.db.execute(
@@ -313,22 +338,98 @@ class Controller(object):
         book.has_dirty_relations = False
         return book
 
+    @lru_cache
     def get_reader(self, id: int) -> Reader:
         row = self.db.execute("select * from Readers where id = ?", [id]).fetchone()
         return Reader(**row)
 
     def get_or_make_book_author(self, book: Book, name: str) -> BookAuthor:
-        row = self.db.execute("select * from Authors where name = ?", [id]).fetchone()
+        row = self.db.execute("select * from Authors where name = ?", [name]).fetchone()
         if row is None:
-            author = Author(-1, name)
+            author = Author(None, name)
         else:
             author = Author(**row)
-        return BookAuthor(-1, book=book, author=author)
+        return BookAuthor(None, book=book, author=author)
 
     def get_or_make_book_genre(self, book: Book, name: str) -> BookGenre:
-        row = self.db.execute("select * from Genres where name = ?", [id]).fetchone()
+        row = self.db.execute("select * from Genres where name = ?", [name]).fetchone()
         if row is None:
-            genre = Genre(-1, name)
+            genre = Genre(None, name)
         else:
             genre = Genre(**row)
-        return BookGenre(-1, book=book, genre=genre)
+        return BookGenre(None, book=book, genre=genre)
+
+    @lru_cache
+    def get_all_authors(self) -> list[str]:
+        return [r["name"] for r in self.db.execute("select name from Authors")]
+
+    @lru_cache
+    def get_all_genres(self) -> list[str]:
+        return [r["name"] for r in self.db.execute("select name from Genres")]
+
+    def _invalidate_caches(self) -> None:
+        for method_name in dir(self):
+            if not method_name.startswith("_") and hasattr(
+                (method := getattr(self, method_name)), "cache_clear"
+            ):
+                method.cache_clear()
+
+    def update_book(self, book: Book) -> None:
+        if book.has_dirty_relations:
+            with self.db:
+                self.delete_book(book)
+                self.add_book(book)
+            book.has_dirty_relations = False
+        else:
+            with self.db:
+                self.db.execute(
+                    f"""
+                    update Books set ({" , ".join(book.columns())}) = ({" , ".join(book.values())})
+                    where id = {book.id}
+                    """
+                )
+                if len(book.readings) > 0:
+                    for reading in book.readings:
+                        self.db.execute(
+                            f"""
+                            update BookReaders set ({" , ".join(reading.columns())}) = ({" , ".join(reading.values())})
+                            where id = {reading.id}
+                            """
+                        )
+
+        self._invalidate_caches()
+
+    def delete_book(self, book: Book) -> None:
+        self.db.execute("delete from Books where id = ?", [book.id])
+        self._invalidate_caches()
+
+    def add_book(self, book: Book) -> None:
+        with self.db:
+            self._insert_obj(book)
+            for author in book.authors:
+                self.add_book_author(author)
+            for genre in book.genres:
+                self.add_book_genre(genre)
+            for reading in book.readings:
+                self._insert_obj(reading)
+            for wishlist in book.wishlists:
+                self._insert_obj(wishlist)
+
+    def add_book_author(self, item: BookAuthor) -> None:
+        with self.db:
+            if item.author.id is None:
+                self._insert_obj(item.author)
+            self._insert_obj(item)
+
+    def add_book_genre(self, item: BookGenre) -> None:
+        with self.db:
+            if item.genre.id is None:
+                self._insert_obj(item.genre)
+            self._insert_obj(item)
+
+    def _insert_obj(self, obj: TableI):
+        query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
+        print(query)
+        id = self.db.execute(query).fetchone()[0]
+        obj.id = id
+        self._invalidate_caches()
