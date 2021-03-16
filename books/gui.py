@@ -5,6 +5,10 @@ from typing import Optional
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
 from books import model
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 
 class App(qtw.QMainWindow):
     def __init__(self, controller: model.Controller) -> None:
@@ -15,6 +19,35 @@ class App(qtw.QMainWindow):
         self.w = 640
         self.h = 480
         self.controller = controller
+        self.view_pages: list[Table] = []
+        self.views = [
+            model.View(
+                "Main",
+                shortcut="1",
+                query="""
+            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
+            from Books left join
+                 (
+                  select b.id, group_concat(a.name) as authors
+                  from Books as b join BookAuthors as ba on b.id = ba.book
+                                  join Authors as a on ba.author = a.id
+                  group by b.id
+                 ) as Authors on Books.id = Authors.id left join
+                 (
+                  select b.id, group_concat(g.name) as genres
+                  from Books as b join BookGenres as bg on b.id = bg.book
+                                  join Genres as g on bg.genre = g.id
+                  group by b.id
+                 ) as Genres on Books.id = Genres.id left join
+                 (
+                  select b.id, group_concat(g.name) as publishers
+                  from Books as b join BookPublishers as bg on b.id = bg.book
+                                  join Publishers as g on bg.publisher = g.id
+                  group by b.id
+                 ) as Publishers on Books.id = Publishers.id
+            """,
+            )
+        ]
         self.initUI()
 
     def initUI(self) -> None:
@@ -22,21 +55,29 @@ class App(qtw.QMainWindow):
         self.setGeometry(self.left, self.top, self.w, self.h)
         self.set_shortcuts()
 
-        self.table = Table()
-        self.update_table()
-        self.table.cellDoubleClicked.connect(self.edit_book)  # type: ignore
+        self.tabs = qtw.QTabWidget()
+        for view in self.views:
+            view_page = Table(view, self.controller)
+            view_page.cellDoubleClicked.connect(self.edit_book)  # type: ignore
+            self.view_pages.append(view_page)
+            shortcut = qtw.QShortcut(qtg.QKeySequence(view.shortcut), self)
+            shortcut.activated.connect(lambda: self.tabs.setCurrentWidget(view_page))  # type: ignore
+            self.tabs.addTab(view_page, f"{view.shortcut}: {view.name}")
 
-        self.setCentralWidget(self.table)
+        self.setCentralWidget(self.tabs)
 
         self.show()
 
     def edit_book(self, i: int, j: int) -> None:
-        book_id = self.table.item(i, 0).text()
+        try:
+            book_id = self.sender().rows[i]["id"]
+        except ValueError:
+            return
         bookdiag = BookDialog(self.controller, self.controller.get_book(int(book_id)))
         if bookdiag.exec() == qtw.QDialog.Accepted:
             book = bookdiag.get_book()
             self.controller.update_book(book)
-            self.update_table()
+            self.update_tables()
 
     def add_book(self) -> None:
         bookdiag = BookDialog(self.controller)
@@ -45,10 +86,9 @@ class App(qtw.QMainWindow):
             self.controller.add_book(book)
             self.update_table()
 
-    def update_table(self) -> None:
-        self.table.clear()
-        rows = self.controller.get_all_books()
-        self.table.set_data(rows, rows[0].keys())
+    def update_tables(self) -> None:
+        for t in self.view_pages:
+            t.update_table()
 
     def set_shortcuts(self) -> None:
         add_new_book = qtw.QShortcut(qtg.QKeySequence("a"), self)
@@ -56,14 +96,37 @@ class App(qtw.QMainWindow):
 
 
 class Table(qtw.QTableWidget):
-    def set_data(self, data: list[tuple[str, ...]], header: tuple[str, ...]) -> None:
-        self.setColumnCount(len(header))
-        self.setRowCount(len(data))
-        self.setHorizontalHeaderLabels(header)
+    def __init__(self, view: model.View, controller: model.Controller) -> None:
+        super().__init__()
+        self.view = view
+        self.controller = controller
+        rows, header = self.controller.get_view(self.view)
 
-        for i, row in enumerate(data):
-            for j, col in enumerate(row):
-                self.setItem(i, j, qtw.QTableWidgetItem(f"{col}"))
+        self.rows = rows
+        self.shown = [h for h in header if h not in self.view.hidden_cols]
+        self.setColumnCount(len(self.shown))
+        self.setHorizontalHeaderLabels(self.shown)
+        self.sort_column = (
+            self.shown.index(view.sort_col) if view.sort_col in self.shown else -1
+        )
+        self.update_table()
+
+    def update_table(self) -> None:
+        rows, _ = self.controller.get_view(self.view)
+        self.rows = rows
+        self.setRowCount(len(rows))
+
+        for i, row in enumerate(rows):
+            for j, col_name in enumerate(self.shown):
+                self.setItem(i, j, qtw.QTableWidgetItem(f"{row[col_name]}"))
+
+        if self.sort_column > -1:
+            self.sortItems(
+                self.sort_column,
+                qtc.Qt.SortOrder.AscendingOrder
+                if self.view.sort_asc
+                else qtc.Qt.SortOrder.DescendingOrder,
+            )
 
 
 class BookDialog(qtw.QDialog):
@@ -104,9 +167,16 @@ class BookDialog(qtw.QDialog):
         self.wgenre = ComboWidget(self.controller.get_all_genres())
         self.wgenre.combobox_made.connect(self.set_tab_order)
         left_form.addRow("Genre", self.wgenre)
-        self.wfirst = qtw.QLineEdit()
+        self.wpublisher = ComboWidget(self.controller.get_all_publishers())
+        self.wpublisher.combobox_made.connect(self.set_tab_order)
+        left_form.addRow("Publisher", self.wpublisher)
+        self.wfirst = qtw.QSpinBox()
+        self.wfirst.setMinimum(-5000)
+        self.wfirst.setMaximum(5000)
+        self.wfirst.setValue(datetime.date.today().year)
         left_form.addRow("First Published", self.wfirst)
-        self.wedition = qtw.QLineEdit()
+        self.wedition = qtw.QSpinBox()
+        self.wedition.setValue(1)
         left_form.addRow("Edition", self.wedition)
         self.wnotes = qtw.QTextEdit()
         self.wnotes.setTabChangesFocus(True)
@@ -114,27 +184,56 @@ class BookDialog(qtw.QDialog):
         self.left_form = left_form
 
         # Right form
+
+        # Reading/wishlist form
         right_form = qtw.QFormLayout()
         self.wread = qtw.QCheckBox()
         self.wread.stateChanged.connect(self.read_changed)  # type: ignore
-        right_form.addRow("Read", self.wread)
+        right_form.addRow("Reading", self.wread)
 
         self.wstart = qtw.QDateEdit(qtc.QDate.currentDate())
         self.wstart.setCalendarPopup(True)
         self.wend = qtw.QDateEdit(qtc.QDate.currentDate())
         self.wend.setCalendarPopup(True)
         right_form.addRow("Start", self.wstart)
-        right_form.addRow("End", self.wend)
+        self.wfinished = qtw.QCheckBox()
+        self.wfinished.stateChanged.connect(self.read_changed)  # type: ignore
+        right_form.addRow("Finished", self.wfinished)
         self.wdropped = qtw.QCheckBox()
+        self.wdropped.stateChanged.connect(self.read_changed)  # type: ignore
         right_form.addRow("Dropped", self.wdropped)
+        right_form.addRow("End", self.wend)
         self.wreadnotes = qtw.QTextEdit()
         self.wreadnotes.setTabChangesFocus(True)
         right_form.addRow("Notes", self.wreadnotes)
-        self.read_widgets = [self.wstart, self.wend, self.wdropped, self.wreadnotes]
+        self.read_widgets = [
+            self.wstart,
+            self.wend,
+            self.wfinished,
+            self.wdropped,
+            self.wreadnotes,
+        ]
         self.set_read_widgets_enabled(False)
 
         self.wwtr = qtw.QCheckBox()
         right_form.addRow("Want to read", self.wwtr)
+
+        # Owner form
+        self.wowned = qtw.QCheckBox()
+        self.wowned.stateChanged.connect(self.owned_changed)  # type: ignore
+        right_form.addRow("Owned", self.wowned)
+        self.wplace = qtw.QLineEdit()
+        right_form.addRow("Place", self.wplace)
+        self.wloanedto = qtw.QLineEdit()
+        right_form.addRow("Loaned to", self.wloanedto)
+        self.wloanedfrom = qtw.QLineEdit()
+        right_form.addRow("Loaned from", self.wloanedfrom)
+        self.owned_widgets = [
+            self.wplace,
+            self.wloanedto,
+            self.wloanedfrom,
+        ]
+        self.set_owned_widgets_enabled(False)
         self.right_form = right_form
 
         # Forms
@@ -159,15 +258,21 @@ class BookDialog(qtw.QDialog):
             self.wtitle,
             *self.wauthor.get_all_combos(),
             *self.wgenre.get_all_combos(),
+            *self.wpublisher.get_all_combos(),
             self.wfirst,
             self.wedition,
             self.wnotes,
             self.wread,
             self.wstart,
-            self.wend,
+            self.wfinished,
             self.wdropped,
+            self.wend,
             self.wreadnotes,
             self.wwtr,
+            self.wowned,
+            self.wplace,
+            self.wloanedto,
+            self.wloanedfrom,
             self.buttons,
         ]
 
@@ -180,23 +285,41 @@ class BookDialog(qtw.QDialog):
 
     def read_changed(self) -> None:
         self.set_read_widgets_enabled(self.wread.isChecked())
+        self.wend.setEnabled(
+            self.wread.isChecked()
+            and (self.wdropped.isChecked() or self.wfinished.isChecked())
+        )
+
+    def set_owned_widgets_enabled(self, enable: bool) -> None:
+        for w in self.owned_widgets:
+            w.setEnabled(enable)
+
+    def owned_changed(self) -> None:
+        self.set_owned_widgets_enabled(self.wowned.isChecked())
 
     def get_book(self) -> model.Book:
         title = self.wtitle.text()
-        firstpub = int(self.wfirst.text())
-        edition = int(self.wedition.text())
+        firstpub = self.wfirst.value()
+        edition = self.wedition.value()
         notes = self.wnotes.toPlainText()
 
         authors = self.wauthor.get_all()
         genres = self.wgenre.get_all()
+        publishers = self.wpublisher.get_all()
 
         read = self.wread.isChecked()
         start = self.wstart.date().toPyDate()
         end = self.wend.date().toPyDate()
+        finished = self.wfinished.isChecked()
         dropped = self.wdropped.isChecked()
         read_notes = self.wreadnotes.toPlainText()
 
         toread = self.wwtr.isChecked()
+
+        owned = self.wowned.isChecked()
+        place = self.wplace.text()
+        loaned_to = self.wloanedto.text()
+        loaned_from = self.wloanedfrom.text()
 
         if self.book is not None:
             book = self.book
@@ -222,31 +345,67 @@ class BookDialog(qtw.QDialog):
                 self.controller.get_or_make_book_genre(book, name) for name in genres
             ]
 
-        if read:
-            if len(book.readings) == 1:
-                book.readings[0].start = start
-                book.readings[0].end = end
-                book.readings[0].dropped = dropped
-                book.readings[0].notes = read_notes
-            else:
-                book.readings = [
-                    model.BookReader(
-                        None,
-                        self.controller.user,
-                        book,
-                        start,
-                        end,
-                        dropped,
-                        read_notes,
-                    )
-                ]
-        elif len(book.readings) == 1:
-            book.readings = []
+        if len(publishers) != len(book.publishers) or any(
+            a != b.publisher.name for a, b in zip(publishers, book.publishers)
+        ):
+            book.publishers = [
+                self.controller.get_or_make_book_publisher(book, name)
+                for name in publishers
+            ]
 
-        if toread and len(book.wishlists) == 0:
-            book.wishlists = [model.Wishlist(None, self.controller.user, book)]
-        elif not toread and len(book.wishlists) == 1:
-            book.wishlists = []
+        reading = next(
+            (o for o in book.readings if o.reader.id == self.controller.user.id), None
+        )
+        if reading is not None and read:
+            reading.start = start
+            reading.end = end
+            reading.read = finished
+            reading.dropped = dropped
+            reading.notes = read_notes
+        elif reading is not None and not read:
+            book.readings.remove(reading)
+        elif read:
+            book.readings.append(
+                model.BookReader(
+                    None,
+                    self.controller.user,
+                    book,
+                    start,
+                    end,
+                    finished,
+                    dropped,
+                    read_notes,
+                )
+            )
+
+        wishlist = next(
+            (o for o in book.wishlists if o.reader.id == self.controller.user.id), None
+        )
+        if wishlist is not None and not toread:
+            book.wishlists.remove(wishlist)
+        elif toread:
+            book.wishlists.append(model.Wishlist(None, self.controller.user, book))
+
+        owner = next(
+            (o for o in book.owners if o.owner.id == self.controller.user.id), None
+        )
+        if owner is not None and owned:
+            owner.place = place
+            owner.loaned_from = loaned_from
+            owner.loaned_to = loaned_to
+        elif owner is not None and not owned:
+            book.owners.remove(owner)
+        elif owned:
+            book.owners.append(
+                model.BookOwner(
+                    None,
+                    book,
+                    self.controller.user,
+                    place,
+                    loaned_to,
+                    loaned_from,
+                )
+            )
 
         return book
 
@@ -254,11 +413,12 @@ class BookDialog(qtw.QDialog):
         if self.book is None:
             self.wauthor.make_combo("")
             self.wgenre.make_combo("")
+            self.wpublisher.make_combo("")
             return
 
         self.wtitle.setText(self.book.title)
-        self.wfirst.setText(f"{self.book.first_published}")
-        self.wedition.setText(f"{self.book.edition}")
+        self.wfirst.setValue(self.book.first_published)
+        self.wedition.setValue(self.book.edition)
         self.wnotes.setText(self.book.notes)
 
         self.wauthor.clear()
@@ -273,30 +433,40 @@ class BookDialog(qtw.QDialog):
         else:
             for genre in self.book.genres:
                 self.wgenre.make_combo(genre.genre.name)
+        self.wpublisher.clear()
+        if len(self.book.publishers) == 0:
+            self.wpublisher.make_combo("")
+        else:
+            for publisher in self.book.publishers:
+                self.wpublisher.make_combo(publisher.publisher.name)
 
-        try:
-            reading = next(
-                r for r in self.book.readings if self.controller.user.id == r.reader.id
-            )
+        reading = next(
+            (r for r in self.book.readings if self.controller.user.id == r.reader.id),
+            None,
+        )
+        if reading is not None:
             self.wread.setChecked(True)
             self.wstart.setDate(reading.start)
             self.wend.setDate(reading.end)
             self.wdropped.setChecked(reading.dropped)
+            self.wfinished.setChecked(reading.read)
             self.wreadnotes.setText(reading.notes)
-        except StopIteration:
-            pass
-        except:
-            raise
 
-        try:
-            wishlist = next(
-                r for r in self.book.wishlists if self.controller.user.id == r.reader.id
-            )
+        owner = next(
+            (o for o in self.book.owners if self.controller.user.id == o.owner.id), None
+        )
+        if owner is not None:
+            self.wowned.setChecked(True)
+            self.wplace.setText(owner.place)
+            self.wloanedto.setText(owner.loaned_to)
+            self.wloanedfrom.setText(owner.loaned_from)
+
+        wishlist = next(
+            (r for r in self.book.wishlists if self.controller.user.id == r.reader.id),
+            None,
+        )
+        if wishlist is not None:
             self.wwtr.setChecked(True)
-        except StopIteration:
-            pass
-        except:
-            raise
 
 
 class ComboWidget(qtw.QWidget):
@@ -332,7 +502,7 @@ class ComboWidget(qtw.QWidget):
             pass
 
     def get_all(self) -> list[str]:
-        return [c.currentText() for c in self.get_all_combos()]
+        return [c.currentText() for c in self.get_all_combos() if c.currentText() != ""]
 
     def get_all_combos(self) -> list[qtw.QComboBox]:
         return [
@@ -384,11 +554,13 @@ class ComboWidget(qtw.QWidget):
 
 
 def main() -> None:
+    import logging.config
+    from books import LOGGER_DEBUG_CONFIG
+
+    logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
+    logger.debug(f"test")
+
     app = qtw.QApplication(sys.argv)
     controller = model.Controller("test.db", 1)
     window = App(controller)
     sys.exit(app.exec_())
-
-
-if __name__ == "__main__":
-    main()

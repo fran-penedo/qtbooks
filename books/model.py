@@ -5,8 +5,13 @@ import sqlite3 as sqlite
 from functools import lru_cache
 from sqlite3 import Connection, Row
 from typing import Optional, Union
+from PyQt5.QtGui import QDesktopServices
 
 import attr
+
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def _from_dict(cls, obj):
@@ -41,15 +46,30 @@ class TableI(object):
 @attr.s(auto_attribs=True)
 class Book(TableI):
     title: str
-    first_published: int
-    edition: int
+    first_published: int = attr.ib(converter=int)
+    edition: int = attr.ib(converter=int)
     added: datetime.date = attr.ib(converter=_convert_date)
     notes: str
+
+    class RelationList(list):
+        def __init__(self, l: list, b: "Book") -> None:
+            super().__init__(l)
+            self.book = b
+
+        def append(self, x):
+            super().append(x)
+            self.book.has_dirty_relations = True
+
+        def remove(self, x):
+            super().remove(x)
+            self.book.has_dirty_relations = True
 
     def __attrs_post_init__(self) -> None:
         self.authors = []
         self.genres = []
+        self.publishers = []
         self.readings = []
+        self.owners = []
         self.wishlists = []
         self.has_dirty_relations = False
 
@@ -59,7 +79,7 @@ class Book(TableI):
 
     @authors.setter
     def authors(self, value: list["BookAuthor"]) -> None:
-        self._authors = value
+        self._authors = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
@@ -68,7 +88,16 @@ class Book(TableI):
 
     @genres.setter
     def genres(self, value: list["BookGenre"]) -> None:
-        self._genres = value
+        self._genres = Book.RelationList(value, self)
+        self.has_dirty_relations = True
+
+    @property
+    def publishers(self) -> list["BookPublisher"]:
+        return self._publishers
+
+    @publishers.setter
+    def publishers(self, value: list["BookPublisher"]) -> None:
+        self._publishers = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
@@ -77,7 +106,16 @@ class Book(TableI):
 
     @readings.setter
     def readings(self, value: list["BookReader"]) -> None:
-        self._readings = value
+        self._readings = Book.RelationList(value, self)
+        self.has_dirty_relations = True
+
+    @property
+    def owners(self) -> list["BookOwner"]:
+        return self._owners
+
+    @owners.setter
+    def owners(self, value: list["BookOwner"]) -> None:
+        self._owners = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
@@ -86,7 +124,7 @@ class Book(TableI):
 
     @wishlists.setter
     def wishlists(self, value: list["Wishlist"]) -> None:
-        self._wishlists = value
+        self._wishlists = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
@@ -151,13 +189,29 @@ class BookAuthor(TableI):
 
 
 @attr.s(auto_attribs=True)
+class BookPublisher(TableI):
+    book: Book = attr.ib(converter=book_from_dict)
+    publisher: Publisher = attr.ib(converter=publisher_from_dict)
+
+
+@attr.s(auto_attribs=True)
 class BookReader(TableI):
     reader: Reader = attr.ib(converter=reader_from_dict)
     book: Book = attr.ib(converter=book_from_dict)
     start: datetime.date = attr.ib(converter=_convert_date)
     end: datetime.date = attr.ib(converter=_convert_date)
-    dropped: bool
+    read: bool = attr.ib(converter=bool)
+    dropped: bool = attr.ib(converter=bool)
     notes: str
+
+
+@attr.s(auto_attribs=True)
+class BookOwner(TableI):
+    book: Book = attr.ib(converter=book_from_dict)
+    owner: Reader = attr.ib(converter=reader_from_dict)
+    place: str
+    loaned_to: str
+    loaned_from: str
 
 
 @attr.s(auto_attribs=True)
@@ -174,7 +228,9 @@ TABLES = [
     Publisher,
     BookGenre,
     BookAuthor,
+    BookPublisher,
     BookReader,
+    BookOwner,
     Wishlist,
 ]
 
@@ -184,9 +240,13 @@ def _value_from_att(obj: TableI, att: attr.Attribute) -> str:
     if v is None:
         return "NULL"
     elif att.type in TABLES:
-        return f"'{v.id}'"
+        return f"{v.id}"
     elif att.type is datetime.date:
         return v.strftime("'%s'")
+    elif att.type is int:
+        return f"{v}"
+    elif att.type is bool:
+        return f"{v}"
     else:
         return f"'{v}'"
 
@@ -244,8 +304,8 @@ def make_test_db(fn: str = ":memory:") -> Connection:
             insert into Genres(name)
             values ('Classics'), ('Drama');
 
-            insert into Books(title, first_published, edition)
-            values ('Tragedias I', '-406', '11');
+            insert into Books(title, first_published, edition, notes)
+            values ('Tragedias I', '-406', '11', '');
 
             insert into BookGenres(book, genre)
             values (1, 1), (1, 2);
@@ -253,8 +313,14 @@ def make_test_db(fn: str = ":memory:") -> Connection:
             insert into BookAuthors(book, author)
             values (1, 1), (1, 2);
 
-            insert into BookReaders(book, reader, start, end, dropped, notes)
-            values (1, 1, strftime('%s', date('2021-01-05')), strftime('%s', date('2021-01-10')), False, Null);
+            insert into BookPublishers(book, publisher)
+            values (1, 1);
+
+            insert into BookReaders(book, reader, start, end, dropped, read, notes)
+            values (1, 1, strftime('%s', date('2021-01-05')), strftime('%s', date('2021-01-10')), False, True, Null);
+
+            insert into BookOwners(book, owner, place, loaned_to, loaned_from)
+            values (1, 1, 'Living room glassdoor bookcase shelf 1', '', '');
 
             insert into Wishlists(reader, book)
             values (1, 1);
@@ -265,16 +331,37 @@ def make_test_db(fn: str = ":memory:") -> Connection:
     return db
 
 
+@attr.s(auto_attribs=True, frozen=True)
+class View(object):
+    name: str
+    query: str
+    shortcut: str = ""
+    hidden_cols: tuple[str] = attr.ib(factory=tuple)
+    sort_col: str = "id"
+    sort_asc: bool = True
+
+
 class Controller(object):
     def __init__(self, fn: str, user_id: int) -> None:
         self.db = make_test_db(fn)
         self.user = self.get_reader(user_id)
 
+    def execute(self, sql: str, *args, **kwargs) -> sqlite.Cursor:
+        logger.debug(f"sql: {sql}")
+        return self.db.execute(sql, *args, **kwargs)
+
+    @lru_cache
+    def get_view(self, view: View) -> tuple[list[Row], list[str]]:
+        cursor = self.execute(view.query)
+        rows = cursor.fetchall()
+        header = [t[0] for t in cursor.description]
+        return rows, header
+
     @lru_cache
     def get_all_books(self) -> list[Row]:
-        rows = self.db.execute(
+        rows = self.execute(
             """
-            select Books.id, title, Authors.authors, Genres.genres, first_published, notes
+            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
             from Books left join
                  (
                   select b.id, group_concat(a.name) as authors
@@ -287,7 +374,13 @@ class Controller(object):
                   from Books as b join BookGenres as bg on b.id = bg.book
                                   join Genres as g on bg.genre = g.id
                   group by b.id
-                 ) as Genres on Books.id = Genres.id
+                 ) as Genres on Books.id = Genres.id left join
+                 (
+                  select b.id, group_concat(g.name) as publishers
+                  from Books as b join BookPublishers as bg on b.id = bg.book
+                                  join Publishers as g on bg.publisher = g.id
+                  group by b.id
+                 ) as Publishers on Books.id = Publishers.id
             """
         ).fetchall()
 
@@ -295,33 +388,48 @@ class Controller(object):
 
     @lru_cache
     def get_book(self, id: int):
+        logger.debug(f"Getting book {id}")
+
         try:
-            book_row = self.db.execute(
-                "select * from Books where id = ?", [id]
-            ).fetchone()
-            author_rows = self.db.execute(
+            book_row = self.execute("select * from Books where id = ?", [id]).fetchone()
+            author_rows = self.execute(
                 """select BookAuthors.id as id,
                           json_object('id', Authors.id, 'name', name) as author
                 from BookAuthors join Authors on BookAuthors.author = Authors.id
                 where BookAuthors.book = ?""",
                 [id],
             ).fetchall()
-            genre_rows = self.db.execute(
+            genre_rows = self.execute(
                 """select BookGenres.id as id,
                           json_object('id', Genres.id, 'name', name) as genre
                 from BookGenres join Genres on BookGenres.genre = Genres.id
                 where BookGenres.book = ?""",
                 [id],
             ).fetchall()
-            reading_rows = self.db.execute(
+            publisher_rows = self.execute(
+                """select BookPublishers.id as id,
+                          json_object('id', Publishers.id, 'name', name) as publisher
+                from BookPublishers join Publishers on BookPublishers.publisher = Publishers.id
+                where BookPublishers.book = ?""",
+                [id],
+            ).fetchall()
+            reading_rows = self.execute(
                 """select BookReaders.id as id,
                           json_object('id', Readers.id, 'name', name) as reader,
-                          start, end, dropped, notes
+                          start, end, dropped, read, notes
                 from BookReaders join Readers on BookReaders.reader = Readers.id
                 where BookReaders.book = ?""",
                 [id],
             ).fetchall()
-            wishlist_rows = self.db.execute(
+            owner_rows = self.execute(
+                """select BookOwners.id as id,
+                          json_object('id', Readers.id, 'name', name) as owner,
+                          place, loaned_to, loaned_from
+                from BookOwners join Readers on BookOwners.owner = Readers.id
+                where BookOwners.book = ?""",
+                [id],
+            ).fetchall()
+            wishlist_rows = self.execute(
                 """select Wishlists.id as id,
                           json_object('id', Readers.id, 'name', name) as reader
                 from Wishlists join Readers on Wishlists.reader = Readers.id
@@ -331,20 +439,24 @@ class Controller(object):
         except Exception as e:
             raise e
         book = Book(**book_row)
+        logger.debug(f"{len(author_rows)}")
+
         book.authors = [BookAuthor(book=book, **row) for row in author_rows]
         book.genres = [BookGenre(book=book, **row) for row in genre_rows]
+        book.publishers = [BookPublisher(book=book, **row) for row in publisher_rows]
         book.readings = [BookReader(book=book, **row) for row in reading_rows]
+        book.owners = [BookOwner(book=book, **row) for row in owner_rows]
         book.wishlists = [Wishlist(book=book, **row) for row in wishlist_rows]
         book.has_dirty_relations = False
         return book
 
     @lru_cache
     def get_reader(self, id: int) -> Reader:
-        row = self.db.execute("select * from Readers where id = ?", [id]).fetchone()
+        row = self.execute("select * from Readers where id = ?", [id]).fetchone()
         return Reader(**row)
 
     def get_or_make_book_author(self, book: Book, name: str) -> BookAuthor:
-        row = self.db.execute("select * from Authors where name = ?", [name]).fetchone()
+        row = self.execute("select * from Authors where name = ?", [name]).fetchone()
         if row is None:
             author = Author(None, name)
         else:
@@ -352,20 +464,32 @@ class Controller(object):
         return BookAuthor(None, book=book, author=author)
 
     def get_or_make_book_genre(self, book: Book, name: str) -> BookGenre:
-        row = self.db.execute("select * from Genres where name = ?", [name]).fetchone()
+        row = self.execute("select * from Genres where name = ?", [name]).fetchone()
         if row is None:
             genre = Genre(None, name)
         else:
             genre = Genre(**row)
         return BookGenre(None, book=book, genre=genre)
 
+    def get_or_make_book_publisher(self, book: Book, name: str) -> BookPublisher:
+        row = self.execute("select * from Publishers where name = ?", [name]).fetchone()
+        if row is None:
+            publisher = Publisher(None, name)
+        else:
+            publisher = Publisher(**row)
+        return BookPublisher(None, book=book, publisher=publisher)
+
     @lru_cache
     def get_all_authors(self) -> list[str]:
-        return [r["name"] for r in self.db.execute("select name from Authors")]
+        return [r["name"] for r in self.execute("select name from Authors")]
 
     @lru_cache
     def get_all_genres(self) -> list[str]:
-        return [r["name"] for r in self.db.execute("select name from Genres")]
+        return [r["name"] for r in self.execute("select name from Genres")]
+
+    @lru_cache
+    def get_all_publishers(self) -> list[str]:
+        return [r["name"] for r in self.execute("select name from Publishers")]
 
     def _invalidate_caches(self) -> None:
         for method_name in dir(self):
@@ -382,7 +506,7 @@ class Controller(object):
             book.has_dirty_relations = False
         else:
             with self.db:
-                self.db.execute(
+                self.execute(
                     f"""
                     update Books set ({" , ".join(book.columns())}) = ({" , ".join(book.values())})
                     where id = {book.id}
@@ -390,17 +514,25 @@ class Controller(object):
                 )
                 if len(book.readings) > 0:
                     for reading in book.readings:
-                        self.db.execute(
+                        self.execute(
                             f"""
                             update BookReaders set ({" , ".join(reading.columns())}) = ({" , ".join(reading.values())})
                             where id = {reading.id}
+                            """
+                        )
+                if len(book.owners) > 0:
+                    for owner in book.owners:
+                        self.execute(
+                            f"""
+                            update BookOwners set ({" , ".join(owner.columns())}) = ({" , ".join(owner.values())})
+                            where id = {owner.id}
                             """
                         )
 
         self._invalidate_caches()
 
     def delete_book(self, book: Book) -> None:
-        self.db.execute("delete from Books where id = ?", [book.id])
+        self.execute("delete from Books where id = ?", [book.id])
         self._invalidate_caches()
 
     def add_book(self, book: Book) -> None:
@@ -410,8 +542,12 @@ class Controller(object):
                 self.add_book_author(author)
             for genre in book.genres:
                 self.add_book_genre(genre)
+            for publisher in book.publishers:
+                self.add_book_publisher(publisher)
             for reading in book.readings:
                 self._insert_obj(reading)
+            for owner in book.owners:
+                self._insert_obj(owner)
             for wishlist in book.wishlists:
                 self._insert_obj(wishlist)
 
@@ -427,9 +563,15 @@ class Controller(object):
                 self._insert_obj(item.genre)
             self._insert_obj(item)
 
+    def add_book_publisher(self, item: BookPublisher) -> None:
+        with self.db:
+            if item.publisher.id is None:
+                self._insert_obj(item.publisher)
+            self._insert_obj(item)
+
     def _insert_obj(self, obj: TableI):
         query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
         print(query)
-        id = self.db.execute(query).fetchone()[0]
-        obj.id = id
+        id = self.execute(query).fetchone()[0]
+        obj.id = int(id)
         self._invalidate_caches()
