@@ -3,7 +3,7 @@ import datetime
 from typing import Optional
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
-from books import model
+from books import model, config
 
 import logging
 
@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class App(qtw.QMainWindow):
-    def __init__(self, controller: model.Controller) -> None:
+    def __init__(self, controller: model.Controller, options: config.Options) -> None:
         super().__init__()
         self.title = "Pyqtw.Qt5 simple window - pythonspot.com"
         self.left = 10
@@ -19,35 +19,8 @@ class App(qtw.QMainWindow):
         self.w = 640
         self.h = 480
         self.controller = controller
+        self.options = options
         self.view_pages: list[Table] = []
-        self.views = [
-            model.View(
-                "Main",
-                shortcut="1",
-                query="""
-            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
-            from Books left join
-                 (
-                  select b.id, group_concat(a.name) as authors
-                  from Books as b join BookAuthors as ba on b.id = ba.book
-                                  join Authors as a on ba.author = a.id
-                  group by b.id
-                 ) as Authors on Books.id = Authors.id left join
-                 (
-                  select b.id, group_concat(g.name) as genres
-                  from Books as b join BookGenres as bg on b.id = bg.book
-                                  join Genres as g on bg.genre = g.id
-                  group by b.id
-                 ) as Genres on Books.id = Genres.id left join
-                 (
-                  select b.id, group_concat(g.name) as publishers
-                  from Books as b join BookPublishers as bg on b.id = bg.book
-                                  join Publishers as g on bg.publisher = g.id
-                  group by b.id
-                 ) as Publishers on Books.id = Publishers.id
-            """,
-            )
-        ]
         self.initUI()
 
     def initUI(self) -> None:
@@ -56,13 +29,15 @@ class App(qtw.QMainWindow):
         self.set_shortcuts()
 
         self.tabs = qtw.QTabWidget()
-        for view in self.views:
+        for view in self.options.views:
             view_page = Table(view, self.controller)
             view_page.cellDoubleClicked.connect(self.edit_book)  # type: ignore
             self.view_pages.append(view_page)
-            shortcut = qtw.QShortcut(qtg.QKeySequence(view.shortcut), self)
-            shortcut.activated.connect(lambda: self.tabs.setCurrentWidget(view_page))  # type: ignore
             self.tabs.addTab(view_page, f"{view.shortcut}: {view.name}")
+            shortcut = qtw.QShortcut(qtg.QKeySequence(view.shortcut), self)
+            shortcut.activated.connect(  # type: ignore
+                lambda w=view_page: self.tabs.setCurrentWidget(w)
+            )
 
         self.setCentralWidget(self.tabs)
 
@@ -84,7 +59,7 @@ class App(qtw.QMainWindow):
         if bookdiag.exec() == qtw.QDialog.Accepted:
             book = bookdiag.get_book()
             self.controller.add_book(book)
-            self.update_table()
+            self.update_tables()
 
     def update_tables(self) -> None:
         for t in self.view_pages:
@@ -96,7 +71,7 @@ class App(qtw.QMainWindow):
 
 
 class Table(qtw.QTableWidget):
-    def __init__(self, view: model.View, controller: model.Controller) -> None:
+    def __init__(self, view: config.View, controller: model.Controller) -> None:
         super().__init__()
         self.view = view
         self.controller = controller
@@ -558,9 +533,10 @@ def main() -> None:
     from books import LOGGER_DEBUG_CONFIG
 
     logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
-    logger.debug(f"test")
 
+    options = config.parse_config()
     app = qtw.QApplication(sys.argv)
-    controller = model.Controller("test.db", 1)
-    window = App(controller)
+    controller = model.Controller(options.db_file, options.user)
+
+    window = App(controller, options)
     sys.exit(app.exec_())

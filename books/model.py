@@ -9,6 +9,8 @@ from PyQt5.QtGui import QDesktopServices
 
 import attr
 
+from books import config
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -331,28 +333,19 @@ def make_test_db(fn: str = ":memory:") -> Connection:
     return db
 
 
-@attr.s(auto_attribs=True, frozen=True)
-class View(object):
-    name: str
-    query: str
-    shortcut: str = ""
-    hidden_cols: tuple[str] = attr.ib(factory=tuple)
-    sort_col: str = "id"
-    sort_asc: bool = True
-
-
 class Controller(object):
-    def __init__(self, fn: str, user_id: int) -> None:
+    def __init__(self, fn: str, user_name: str) -> None:
         self.db = make_test_db(fn)
-        self.user = self.get_reader(user_id)
+        self.user = self.get_reader(user_name)
 
     def execute(self, sql: str, *args, **kwargs) -> sqlite.Cursor:
         logger.debug(f"sql: {sql}")
         return self.db.execute(sql, *args, **kwargs)
 
     @lru_cache
-    def get_view(self, view: View) -> tuple[list[Row], list[str]]:
-        cursor = self.execute(view.query)
+    def get_view(self, view: config.View) -> tuple[list[Row], list[str]]:
+        sql = view.query.format(user=self.user.id)
+        cursor = self.execute(sql)
         rows = cursor.fetchall()
         header = [t[0] for t in cursor.description]
         return rows, header
@@ -451,8 +444,10 @@ class Controller(object):
         return book
 
     @lru_cache
-    def get_reader(self, id: int) -> Reader:
-        row = self.execute("select * from Readers where id = ?", [id]).fetchone()
+    def get_reader(self, name: str) -> Reader:
+        row = self.execute(
+            "select * from Readers where name = ? collate nocase", [name]
+        ).fetchone()
         return Reader(**row)
 
     def get_or_make_book_author(self, book: Book, name: str) -> BookAuthor:
