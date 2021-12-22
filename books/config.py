@@ -22,6 +22,7 @@ class View(object):
     query: str
     shortcut: str = ""
     hidden_cols: tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
+    shown_cols: tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
     sort_col: str = "id"
     sort_asc: bool = True
 

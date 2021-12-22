@@ -280,6 +280,32 @@ def init_db(db: Connection):
             cols = " , ".join(_def_col(att) for att in attr.fields(c))
             db.execute(f"CREATE TABLE {c.__name__}s({cols})")
 
+        db.execute(
+            """
+            create view BooksView as
+            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
+            from Books left join
+                    (
+                    select b.id, group_concat(a.name) as authors
+                    from Books as b join BookAuthors as ba on b.id = ba.book
+                                    join Authors as a on ba.author = a.id
+                    group by b.id
+                    ) as Authors on Books.id = Authors.id left join
+                    (
+                    select b.id, group_concat(g.name) as genres
+                    from Books as b join BookGenres as bg on b.id = bg.book
+                                    join Genres as g on bg.genre = g.id
+                    group by b.id
+                    ) as Genres on Books.id = Genres.id left join
+                    (
+                    select b.id, group_concat(g.name) as publishers
+                    from Books as b join BookPublishers as bg on b.id = bg.book
+                                    join Publishers as g on bg.publisher = g.id
+                    group by b.id
+                    ) as Publishers on Books.id = Publishers.id
+            """
+        )
+
 
 def make_test_db(fn: str = ":memory:") -> Connection:
     try:
@@ -354,26 +380,8 @@ class Controller(object):
     def get_all_books(self) -> list[Row]:
         rows = self.execute(
             """
-            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
-            from Books left join
-                 (
-                  select b.id, group_concat(a.name) as authors
-                  from Books as b join BookAuthors as ba on b.id = ba.book
-                                  join Authors as a on ba.author = a.id
-                  group by b.id
-                 ) as Authors on Books.id = Authors.id left join
-                 (
-                  select b.id, group_concat(g.name) as genres
-                  from Books as b join BookGenres as bg on b.id = bg.book
-                                  join Genres as g on bg.genre = g.id
-                  group by b.id
-                 ) as Genres on Books.id = Genres.id left join
-                 (
-                  select b.id, group_concat(g.name) as publishers
-                  from Books as b join BookPublishers as bg on b.id = bg.book
-                                  join Publishers as g on bg.publisher = g.id
-                  group by b.id
-                 ) as Publishers on Books.id = Publishers.id
+            select BooksView.id, title, authors, genres, publishers, first_published, edition, notes
+            from BooksView
             """
         ).fetchall()
 
