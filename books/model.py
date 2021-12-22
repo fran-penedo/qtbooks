@@ -360,13 +360,18 @@ def make_test_db(fn: str = ":memory:") -> Connection:
 
 
 class Controller(object):
-    def __init__(self, fn: str, user_name: str) -> None:
+    def __init__(self, fn: str) -> None:
         self.db = make_test_db(fn)
-        self.user = self.get_reader(user_name)
 
     def execute(self, sql: str, *args, **kwargs) -> sqlite.Cursor:
         logger.debug(f"sql: {sql}")
         return self.db.execute(sql, *args, **kwargs)
+
+    def change_user(self, user_name: str) -> None:
+        self.user = self.get_or_make_reader(user_name)
+        if self.user.id is None:
+            self._insert_obj(self.user)
+        self._invalidate_caches()
 
     @lru_cache
     def get_view(self, view: config.View) -> tuple[list[Row], list[str]]:
@@ -451,12 +456,15 @@ class Controller(object):
         book.has_dirty_relations = False
         return book
 
-    @lru_cache
-    def get_reader(self, name: str) -> Reader:
+    def get_or_make_reader(self, name: str) -> Reader:
         row = self.execute(
             "select * from Readers where name = ? collate nocase", [name]
         ).fetchone()
-        return Reader(**row)
+        if row is None:
+            reader = Reader(None, name)
+        else:
+            reader = Reader(**row)
+        return reader
 
     def get_or_make_book_author(self, book: Book, name: str) -> BookAuthor:
         row = self.execute("select * from Authors where name = ?", [name]).fetchone()
@@ -493,6 +501,10 @@ class Controller(object):
     @lru_cache
     def get_all_publishers(self) -> list[str]:
         return [r["name"] for r in self.execute("select name from Publishers")]
+
+    @lru_cache
+    def get_all_readers(self) -> list[str]:
+        return [r["name"].lower() for r in self.execute("select name from Readers")]
 
     def _invalidate_caches(self) -> None:
         for method_name in dir(self):
@@ -570,6 +582,10 @@ class Controller(object):
         with self.db:
             if item.publisher.id is None:
                 self._insert_obj(item.publisher)
+            self._insert_obj(item)
+
+    def add_reader(self, item: Reader) -> None:
+        with self.db:
             self._insert_obj(item)
 
     def _insert_obj(self, obj: TableI):

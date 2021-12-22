@@ -28,6 +28,13 @@ class App(qtw.QMainWindow):
         self.setGeometry(self.left, self.top, self.w, self.h)
         self.set_shortcuts()
 
+        self.show()
+
+        if self.options.user.lower() in self.controller.get_all_readers():
+            self.controller.change_user(self.options.user)
+        else:
+            self.select_user()
+
         self.tabs = qtw.QTabWidget()
         for view in self.options.views:
             view_page = Table(view, self.controller)
@@ -40,8 +47,6 @@ class App(qtw.QMainWindow):
             )
 
         self.setCentralWidget(self.tabs)
-
-        self.show()
 
     def edit_book(self, i: int, j: int) -> None:
         try:
@@ -68,6 +73,33 @@ class App(qtw.QMainWindow):
     def set_shortcuts(self) -> None:
         add_new_book = qtw.QShortcut(qtg.QKeySequence("a"), self)
         add_new_book.activated.connect(self.add_book)  # type: ignore
+        select_user = qtw.QShortcut(qtg.QKeySequence("u"), self)
+        select_user.activated.connect(self.select_user)  # type: ignore
+
+    def select_user(self) -> None:
+        selected = False
+        users = self.controller.get_all_readers()
+        if self.controller.user is not None:
+            current = users.index(self.controller.user.name.lower())
+
+        while not selected:
+            name, ok = qtw.QInputDialog.getItem(
+                self, "Select user", "User", users, current=current, editable=True
+            )
+            if ok:
+                if name.lower() in users:
+                    selected = True
+                else:
+                    created = qtw.QMessageBox.question(
+                        self,
+                        "New user",
+                        f"User '{name}' does not exist. Would you like to create it?",
+                    )
+                    if created == qtw.QMessageBox.StandardButton.Yes:
+                        selected = True
+
+        self.controller.change_user(name)
+        self.update_tables()
 
 
 class Table(qtw.QTableWidget):
@@ -536,7 +568,7 @@ def main() -> None:
 
     options = config.parse_config()
     app = qtw.QApplication(sys.argv)
-    controller = model.Controller(options.db_file, options.user)
+    controller = model.Controller(options.db_file)
 
     window = App(controller, options)
     sys.exit(app.exec_())
