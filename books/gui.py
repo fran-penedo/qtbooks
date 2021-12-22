@@ -1,9 +1,10 @@
 import sys
 import datetime
 from typing import Optional
+import traceback
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
-from books import model, config
+from books import model, config, extract
 
 import logging
 
@@ -75,6 +76,8 @@ class App(qtw.QMainWindow):
         add_new_book.activated.connect(self.add_book)  # type: ignore
         select_user = qtw.QShortcut(qtg.QKeySequence("u"), self)
         select_user.activated.connect(self.select_user)  # type: ignore
+        import_from_url = qtw.QShortcut(qtg.QKeySequence("i"), self)
+        import_from_url.activated.connect(self.import_from_url)  # type: ignore
 
     def select_user(self) -> None:
         selected = False
@@ -99,6 +102,26 @@ class App(qtw.QMainWindow):
                         selected = True
 
         self.controller.change_user(name)
+        self.update_tables()
+
+    def import_from_url(self) -> None:
+        urls, ok = qtw.QInputDialog.getMultiLineText(
+            self, "Import from url", "URL list, one per line", ""
+        )
+        if ok:
+            for url in urls.splitlines():
+                if url == "":
+                    continue
+                try:
+                    book = extract.import_book(url, self.controller)
+                    self.controller.add_book(book)
+                except Exception as e:
+                    qtw.QMessageBox.warning(
+                        self,
+                        "Unable to import",
+                        f"Could not import book at url {url}: \n{traceback.format_exc()}",
+                    )
+
         self.update_tables()
 
 
@@ -168,6 +191,10 @@ class BookDialog(qtw.QDialog):
         left_form = qtw.QFormLayout()
         self.wtitle = qtw.QLineEdit()
         left_form.addRow("Title", self.wtitle)
+        self.wisbn = qtw.QLineEdit()
+        self.wisbn.setValidator(qtg.QRegExpValidator(qtc.QRegExp(r"\d{9,13}"), self))
+        self.wisbn.setText("000000000")
+        left_form.addRow("ISBN", self.wisbn)
         self.wauthor = ComboWidget(self.controller.get_all_authors())
         self.wauthor.combobox_made.connect(self.set_tab_order)
         left_form.addRow("Author", self.wauthor)
@@ -263,6 +290,7 @@ class BookDialog(qtw.QDialog):
     def set_tab_order(self) -> None:
         order = [
             self.wtitle,
+            self.wisbn,
             *self.wauthor.get_all_combos(),
             *self.wgenre.get_all_combos(),
             *self.wpublisher.get_all_combos(),
@@ -306,6 +334,7 @@ class BookDialog(qtw.QDialog):
 
     def get_book(self) -> model.Book:
         title = self.wtitle.text()
+        isbn = int(self.wisbn.text())
         firstpub = self.wfirst.value()
         edition = self.wedition.value()
         notes = self.wnotes.toPlainText()
@@ -334,9 +363,10 @@ class BookDialog(qtw.QDialog):
             book.first_published = firstpub
             book.edition = edition
             book.notes = notes
+            book.isbn = isbn
         else:
             added = datetime.date.today()
-            book = model.Book(None, title, firstpub, edition, added, notes)
+            book = model.Book(None, title, firstpub, edition, added, notes, isbn)
 
         if len(authors) != len(book.authors) or any(
             a != b.author.name for a, b in zip(authors, book.authors)
@@ -424,6 +454,7 @@ class BookDialog(qtw.QDialog):
             return
 
         self.wtitle.setText(self.book.title)
+        self.wisbn.setText(str(self.book.isbn))
         self.wfirst.setValue(self.book.first_published)
         self.wedition.setValue(self.book.edition)
         self.wnotes.setText(self.book.notes)

@@ -52,6 +52,7 @@ class Book(TableI):
     edition: int = attr.ib(converter=int)
     added: datetime.date = attr.ib(converter=_convert_date)
     notes: str
+    isbn: int = attr.ib(converter=int)
 
     class RelationList(list):
         def __init__(self, l: list, b: "Book") -> None:
@@ -332,8 +333,8 @@ def make_test_db(fn: str = ":memory:") -> Connection:
             insert into Genres(name)
             values ('Classics'), ('Drama');
 
-            insert into Books(title, first_published, edition, notes)
-            values ('Tragedias I', '-406', '11', '');
+            insert into Books(title, first_published, edition, notes, isbn)
+            values ('Tragedias I', '-406', '11', '', '9788437605456');
 
             insert into BookGenres(book, genre)
             values (1, 1), (1, 2);
@@ -393,7 +394,19 @@ class Controller(object):
         return rows
 
     @lru_cache
-    def get_book(self, id: int):
+    def get_book_isbn(self, isbn: int) -> Book:
+        try:
+            book_row = self.execute(
+                "select id from Books where isbn = ?", [f"{isbn}"]
+            ).fetchone()
+        except Exception as e:
+            raise e
+        if book_row is None:
+            raise ValueError(f"No book found with isbn {isbn}")
+        return self.get_book(book_row["id"])
+
+    @lru_cache
+    def get_book(self, id: int) -> Book:
         logger.debug(f"Getting book {id}")
 
         try:
