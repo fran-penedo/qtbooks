@@ -43,7 +43,11 @@ def import_book(url: str, controller: model.Controller) -> model.Book:
         for author in authors_dict
     ]
 
-    genres_list = [tag.text for tag in bs.find_all("a", class_="bookPageGenreLink")]
+    genres_list = list(
+        dict.fromkeys(
+            [tag.text for tag in bs.find_all("a", class_="bookPageGenreLink")]
+        )
+    )
     book.genres = [
         controller.get_or_make_book_genre(book, genre) for genre in genres_list
     ]
