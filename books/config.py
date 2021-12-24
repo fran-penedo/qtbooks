@@ -1,5 +1,4 @@
 import configparser
-import argparse
 import getpass
 import json
 import os
@@ -53,15 +52,7 @@ def parse_config_file(fn: str) -> Options:
     return options
 
 
-def build_arg_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Manage book library")
-    parser.add_argument("-u", "--user", help="Name of the logged in user")
-    parser.add_argument("-f", "--db-file", help="Database filename")
-
-    return parser
-
-
-def parse_config() -> Options:
+def parse_config(args: dict) -> Options:
     for f in CONFIG_FILES:
         try:
             options = parse_config_file(f)
@@ -69,8 +60,6 @@ def parse_config() -> Options:
         except FileNotFoundError:
             pass
 
-    argparser = build_arg_parser()
-    args = argparser.parse_args()
-    options.update(vars(args))
+    options.update(args)
 
     return options

@@ -362,7 +362,8 @@ def make_test_db(fn: str = ":memory:") -> Connection:
 
 class Controller(object):
     def __init__(self, fn: str) -> None:
-        self.db = make_test_db(fn)
+        # self.db = make_test_db(fn)
+        self.db = create_db(fn)
 
     def execute(self, sql: str, *args, **kwargs) -> sqlite.Cursor:
         logger.debug(f"sql: {sql}")

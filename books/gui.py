@@ -591,13 +591,13 @@ class ComboWidget(qtw.QWidget):
         self.combobox_made.emit()
 
 
-def main() -> None:
+def main(args: dict) -> None:
     import logging.config
     from books import LOGGER_DEBUG_CONFIG
 
     logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
 
-    options = config.parse_config()
+    options = config.parse_config(args)
     app = qtw.QApplication(sys.argv)
     controller = model.Controller(options.db_file)
 
