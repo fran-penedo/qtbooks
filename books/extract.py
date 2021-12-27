@@ -33,12 +33,12 @@ def import_book(url: str, controller: model.Controller) -> model.Book:
 
     title = bs.find(id="bookTitle", itemprop="name").text.lstrip().rstrip()
     pub_tag = bs.find(text=re.compile("Published"))
-    if (match := re.search(r"-?\d\d\d\d", pub_tag)) is not None:
+    if pub_tag is not None and (match := re.search(r"-?\d\d\d\d", pub_tag)) is not None:
         pub_year = int(match.group())
     else:
         pub_year = 0
 
-    if (match := re.search(r"by (.*)\n", pub_tag)) is not None:
+    if pub_tag is not None and (match := re.search(r"by (.*)\n", pub_tag)) is not None:
         publisher = match.group(1)
     else:
         publisher = None
