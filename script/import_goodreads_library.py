@@ -1,6 +1,7 @@
 import traceback
 import csv
 from datetime import datetime
+from typing import Optional
 
 import click
 
@@ -18,7 +19,10 @@ from books import model, extract
     "-o", "--output-db", type=click.Path(dir_okay=False, writable=True), required=True
 )
 @click.option("-u", "--user", type=str, required=True)
-def import_books(output_db: str, input_csv: str, user: str) -> None:
+@click.option("--out-csv", type=click.Path(dir_okay=False, writable=True))
+def import_books(
+    output_db: str, input_csv: str, user: str, out_csv: Optional[str]
+) -> None:
     controller = model.Controller(output_db)
     controller.change_user(user)
 
@@ -36,12 +40,12 @@ def import_books(output_db: str, input_csv: str, user: str) -> None:
             )
         except ConnectionError as e:
             print(f"Failed to obtain goodreads page for book {entry['Title']}")
-            gr_failed.append(entry["Book Id"])
+            gr_failed.append(entry)
             continue
         except Exception as e:
             print(f"Book {entry['Title']} couldn't be imported")
             print(traceback.format_exc())
-            import_failed.append(entry["Book Id"])
+            import_failed.append(entry)
             continue
 
         if entry["Exclusive Shelf"] == "read":
@@ -63,8 +67,13 @@ def import_books(output_db: str, input_csv: str, user: str) -> None:
         controller.add_book(book)
         print(f"Imported {entry['Title']}")
 
-    print(f"Failed to import: {import_failed}")
-    print(f"Failed to get goodreads page: {gr_failed}")
+    print(f"Failed to import: {[entry['Title'] for entry in import_failed]}")
+    print(f"Failed to get goodreads page: {[entry['Title'] for entry in gr_failed]}")
+    if out_csv is not None:
+        with open(out_csv, "w") as f:
+            csv_writer = csv.writer(f, delimiter=",")
+            csv_writer.writerow(library[0])
+            csv_writer.writerows(entry.values() for entry in gr_failed)
 
 
 if __name__ == "__main__":
