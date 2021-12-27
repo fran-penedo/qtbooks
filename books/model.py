@@ -52,7 +52,7 @@ class Book(TableI):
     edition: int = attr.ib(converter=int)
     added: datetime.date = attr.ib(converter=_convert_date)
     notes: str
-    isbn: int = attr.ib(converter=int)
+    isbn: str
 
     class RelationList(list):
         def __init__(self, l: list, b: "Book") -> None:
@@ -250,6 +250,8 @@ def _value_from_att(obj: TableI, att: attr.Attribute) -> str:
         return f"{v}"
     elif att.type is bool:
         return f"{v}"
+    elif att.type is str:
+        return "'{}'".format(v.replace("'", "''"))
     else:
         return f"'{v}'"
 
@@ -395,16 +397,26 @@ class Controller(object):
         return rows
 
     @lru_cache
-    def get_book_isbn(self, isbn: int) -> Book:
+    def get_book_isbn(self, isbn: str) -> Book:
         try:
             book_row = self.execute(
-                "select id from Books where isbn = ?", [f"{isbn}"]
+                "select id from Books where isbn = ?", [isbn]
             ).fetchone()
         except Exception as e:
             raise e
         if book_row is None:
             raise ValueError(f"No book found with isbn {isbn}")
         return self.get_book(book_row["id"])
+
+    @lru_cache
+    def get_books_title(self, title: str) -> list[Book]:
+        try:
+            book_rows = self.execute(
+                "select id from Books where title = ?", [title]
+            ).fetchall()
+        except Exception as e:
+            raise e
+        return [self.get_book(row["id"]) for row in book_rows]
 
     @lru_cache
     def get_book(self, id: int) -> Book:
@@ -604,7 +616,7 @@ class Controller(object):
 
     def _insert_obj(self, obj: TableI):
         query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
-        print(query)
+        logger.debug(query)
         id = self.execute(query).fetchone()[0]
         obj.id = int(id)
         self._invalidate_caches()

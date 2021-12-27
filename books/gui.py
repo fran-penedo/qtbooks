@@ -192,7 +192,8 @@ class BookDialog(qtw.QDialog):
         self.wtitle = qtw.QLineEdit()
         left_form.addRow("Title", self.wtitle)
         self.wisbn = qtw.QLineEdit()
-        self.wisbn.setValidator(qtg.QRegExpValidator(qtc.QRegExp(r"\d{9,13}"), self))
+        # self.wisbn.setValidator(qtg.QRegExpValidator(qtc.QRegExp(r"\d{9,13}"), self))
+        self.wisbn.setMaxLength(13)
         self.wisbn.setText("000000000")
         left_form.addRow("ISBN", self.wisbn)
         self.wauthor = ComboWidget(self.controller.get_all_authors())
@@ -334,7 +335,7 @@ class BookDialog(qtw.QDialog):
 
     def get_book(self) -> model.Book:
         title = self.wtitle.text()
-        isbn = int(self.wisbn.text())
+        isbn = self.wisbn.text()
         firstpub = self.wfirst.value()
         edition = self.wedition.value()
         notes = self.wnotes.toPlainText()
