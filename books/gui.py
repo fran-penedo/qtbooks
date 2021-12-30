@@ -226,14 +226,34 @@ class Table(qtw.QTableWidget):
         self.view = view
         self.controller = controller
 
+        self.verticalHeader().setVisible(False)
         rows, header = self.controller.get_view(self.view)
         self.view_rows = rows
-        self.shown = [h for h in header if h not in self.view.hidden_cols]
-        self.setColumnCount(len(self.shown))
-        self.setHorizontalHeaderLabels(self.shown)
+        self.header = header
+        self.setColumnCount(len(self.header))
+        self.setHorizontalHeaderLabels(self.header)
         self.sort_column = (
-            self.shown.index(view.sort_col) if view.sort_col in self.shown else -1
+            self.header.index(view.sort_col) if view.sort_col in self.header else -1
         )
+        header_widget = self.horizontalHeader()
+        header_widget.setContextMenuPolicy(
+            qtc.Qt.ContextMenuPolicy.ActionsContextMenu  # type: ignore
+        )
+        header_widget.setSectionResizeMode(qtw.QHeaderView.Stretch)
+        self.setSelectionBehavior(qtw.QTableWidget.SelectRows)
+        self.setSelectionMode(qtw.QTableWidget.SingleSelection)
+        for i, h in enumerate(self.header):
+            action = qtw.QAction(h, self)
+            action.setCheckable(True)
+            if h in self.view.hidden_cols:
+                self.setColumnHidden(i, True)
+                action.setChecked(False)
+            else:
+                action.setChecked(True)
+            action.triggered.connect(
+                lambda checked, col=i: self.toggle_column_hidden(col)
+            )
+            header_widget.addAction(action)
 
         self.search_thread = search_thread
         self.table_filter = TableFilter(self, search_thread)
@@ -241,6 +261,11 @@ class Table(qtw.QTableWidget):
         self.table_filter.finished.connect(self._update_row_view)
 
         self._update_row_view()
+
+    def toggle_column_hidden(self, col: int) -> None:
+        hide = not self.isColumnHidden(col)
+        self.setColumnHidden(col, hide)
+        self.horizontalHeader().actions()[col].setChecked(not hide)
 
     def update_table(self) -> None:
         rows, _ = self.controller.get_view(self.view)
@@ -256,9 +281,9 @@ class Table(qtw.QTableWidget):
 
         self.setRowCount(len(self.rows))
         for i, row in enumerate(self.rows):
-            for j, col_name in enumerate(self.shown):
+            for j, col_name in enumerate(self.header):
                 item = qtw.QTableWidgetItem(f"{row[col_name]}")
-                item.setFlags(qtc.Qt.ItemFlag.ItemIsEnabled)  # type: ignore
+                item.setFlags(qtc.Qt.ItemFlag.ItemIsEnabled | qtc.Qt.ItemFlag.ItemIsSelectable)  # type: ignore
                 self.setItem(i, j, item)
 
         if self.sort_column > -1:
