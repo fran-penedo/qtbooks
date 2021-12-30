@@ -86,7 +86,7 @@ class App(qtw.QMainWindow):
 
     def edit_book(self, i: int, j: int) -> None:
         try:
-            book_id = self.sender().rows[i]["id"]
+            book_id = self.sender().item(self.sender().currentRow(), 0).text()
         except ValueError:
             return
         book = self.controller.get_book(int(book_id))
@@ -235,11 +235,21 @@ class Table(qtw.QTableWidget):
         self.sort_column = (
             self.header.index(view.sort_col) if view.sort_col in self.header else -1
         )
+        self.setSortingEnabled(True)
+        if self.sort_column > -1:
+            self.sortByColumn(
+                self.sort_column,
+                qtc.Qt.SortOrder.AscendingOrder  # type: ignore
+                if self.view.sort_asc
+                else qtc.Qt.SortOrder.DescendingOrder,  # type: ignore
+            )
         header_widget = self.horizontalHeader()
         header_widget.setContextMenuPolicy(
             qtc.Qt.ContextMenuPolicy.ActionsContextMenu  # type: ignore
         )
         header_widget.setSectionResizeMode(qtw.QHeaderView.Stretch)
+        header_widget.setSortIndicatorShown(True)
+        # header_widget.sectionClicked.connect(self.sort_by_column)
         self.setSelectionBehavior(qtw.QTableWidget.SelectRows)
         self.setSelectionMode(qtw.QTableWidget.SingleSelection)
         for i, h in enumerate(self.header):
@@ -279,6 +289,7 @@ class Table(qtw.QTableWidget):
     def _update_row_view(self) -> None:
         self.rows = self.table_filter.filtered_rows
 
+        self.setSortingEnabled(False)
         self.setRowCount(len(self.rows))
         for i, row in enumerate(self.rows):
             for j, col_name in enumerate(self.header):
@@ -286,13 +297,7 @@ class Table(qtw.QTableWidget):
                 item.setFlags(qtc.Qt.ItemFlag.ItemIsEnabled | qtc.Qt.ItemFlag.ItemIsSelectable)  # type: ignore
                 self.setItem(i, j, item)
 
-        if self.sort_column > -1:
-            self.sortItems(
-                self.sort_column,
-                qtc.Qt.SortOrder.AscendingOrder  # type: ignore
-                if self.view.sort_asc
-                else qtc.Qt.SortOrder.DescendingOrder,  # type: ignore
-            )
+        self.setSortingEnabled(True)
 
 
 class BookDialog(qtw.QDialog):
