@@ -22,12 +22,13 @@ class App(qtw.QMainWindow):
         self.controller = controller
         self.options = options
         self.view_pages: list[Table] = []
+        self.search_thread = qtc.QThread()
+        self.search_thread.start()
         self.initUI()
 
     def initUI(self) -> None:
         self.setWindowTitle(self.title)
         self.setGeometry(self.left, self.top, self.w, self.h)
-        self.set_shortcuts()
 
         self.show()
 
@@ -38,16 +39,50 @@ class App(qtw.QMainWindow):
 
         self.tabs = qtw.QTabWidget()
         for view in self.options.views:
-            view_page = Table(view, self.controller)
-            view_page.cellDoubleClicked.connect(self.edit_book)  # type: ignore
+            view_page = Table(view, self.controller, self.search_thread)
+            view_page.cellDoubleClicked.connect(self.edit_book)
             self.view_pages.append(view_page)
             self.tabs.addTab(view_page, f"{view.shortcut}: {view.name}")
             shortcut = qtw.QShortcut(qtg.QKeySequence(view.shortcut), self)
-            shortcut.activated.connect(  # type: ignore
-                lambda w=view_page: self.tabs.setCurrentWidget(w)
-            )
+            shortcut.activated.connect(lambda w=view_page: self.change_view(w))
+            self.tabs.tabBarClicked.connect(self.hide_search_bar)
 
         self.setCentralWidget(self.tabs)
+
+        self.search_bar = qtw.QToolBar("search", self)
+        self.search_bar.setMovable(False)
+        self.wsearch = App.SearchBar(self)
+        self.wsearch.hide_signal.connect(self.hide_search_bar)
+        self.search_bar.addWidget(self.wsearch)
+        self.addToolBar(qtc.Qt.ToolBarArea.TopToolBarArea, self.search_bar)  # type: ignore
+        self.hide_search_bar()
+
+        self.set_shortcuts()
+
+    def change_view(self, view: "Table"):
+        self.tabs.setCurrentWidget(view)
+        self.hide_search_bar()
+
+    class SearchBar(qtw.QLineEdit):
+        hide_signal = qtc.pyqtSignal()
+
+        def keyPressEvent(self, key: qtg.QKeyEvent) -> None:
+            super().keyPressEvent(key)
+            if key.matches(qtg.QKeySequence.StandardKey.Cancel):  # type: ignore
+                self.hide_signal.emit()
+
+    def show_search_bar(self) -> None:
+        self.search_bar.show()
+        self.wsearch.setFocus()
+        self.wsearch.textEdited.connect(self.tabs.currentWidget().filter)
+
+    def hide_search_bar(self) -> None:
+        self.search_bar.hide()
+        self.tabs.currentWidget().filter("")
+        try:
+            self.wsearch.textEdited.disconnect(self.tabs.currentWidget().filter)
+        except TypeError:
+            pass
 
     def edit_book(self, i: int, j: int) -> None:
         try:
@@ -73,11 +108,13 @@ class App(qtw.QMainWindow):
 
     def set_shortcuts(self) -> None:
         add_new_book = qtw.QShortcut(qtg.QKeySequence("a"), self)
-        add_new_book.activated.connect(self.add_book)  # type: ignore
+        add_new_book.activated.connect(self.add_book)
         select_user = qtw.QShortcut(qtg.QKeySequence("u"), self)
-        select_user.activated.connect(self.select_user)  # type: ignore
+        select_user.activated.connect(self.select_user)
         import_from_url = qtw.QShortcut(qtg.QKeySequence("i"), self)
-        import_from_url.activated.connect(self.import_from_url)  # type: ignore
+        import_from_url.activated.connect(self.import_from_url)
+        filter_rows = qtw.QShortcut(qtg.QKeySequence("/"), self)
+        filter_rows.activated.connect(self.show_search_bar)
 
     def select_user(self) -> None:
         selected = False
@@ -125,13 +162,68 @@ class App(qtw.QMainWindow):
         self.update_tables()
 
 
+class TableFilter(qtc.QObject):
+    finished = qtc.pyqtSignal()
+
+    def __init__(self, table: "Table", thread: qtc.QThread) -> None:
+        super().__init__()
+        self.table = table
+        self.filtered_rows = self.table.rows
+        self.jobs = 0
+        self.mutex = qtc.QMutex()
+        self.moveToThread(thread)
+
+    def filter(self, exp: str) -> None:
+        self.mutex.lock()
+        if self.jobs > 1:
+            self.jobs -= 1
+            self.mutex.unlock()
+            return
+        self.mutex.unlock()
+        logger.debug(f"Running filter with {exp=}")
+
+        if exp == "":
+            filtered_rows = self.table.rows
+        else:
+            row_filter = model.RowFilter(exp)
+            filtered_rows = []
+
+            for row in self.table.rows:
+                self.mutex.lock()
+                if self.jobs > 1:
+                    self.jobs -= 1
+                    self.mutex.unlock()
+                    return
+                self.mutex.unlock()
+                if row_filter.matches(row):
+                    filtered_rows.append(row)
+
+        self.filtered_rows = filtered_rows
+        self.finished.emit()
+        self.mutex.lock()
+        self.jobs -= 1
+        self.mutex.unlock()
+
+    def abort(self) -> None:
+        self.mutex.lock()
+        self.jobs += 1
+        self.mutex.unlock()
+
+
 class Table(qtw.QTableWidget):
-    def __init__(self, view: config.View, controller: model.Controller) -> None:
+    filter_signal = qtc.pyqtSignal(str)
+
+    def __init__(
+        self,
+        view: config.View,
+        controller: model.Controller,
+        search_thread: qtc.QThread,
+    ) -> None:
         super().__init__()
         self.view = view
         self.controller = controller
-        rows, header = self.controller.get_view(self.view)
 
+        rows, header = self.controller.get_view(self.view)
         self.rows = rows
         self.shown = [h for h in header if h not in self.view.hidden_cols]
         self.setColumnCount(len(self.shown))
@@ -139,13 +231,27 @@ class Table(qtw.QTableWidget):
         self.sort_column = (
             self.shown.index(view.sort_col) if view.sort_col in self.shown else -1
         )
+
+        self.search_thread = search_thread
+        self.table_filter = TableFilter(self, search_thread)
+        self.filter_signal.connect(self.table_filter.filter)
+        self.table_filter.finished.connect(self._update_row_view)
+
         self.update_table()
 
     def update_table(self) -> None:
         rows, _ = self.controller.get_view(self.view)
         self.rows = rows
-        self.setRowCount(len(rows))
+        self.filter("")
 
+    def filter(self, exp: str) -> None:
+        self.table_filter.abort()
+        self.filter_signal.emit(exp)
+
+    def _update_row_view(self) -> None:
+        rows = self.table_filter.filtered_rows
+
+        self.setRowCount(len(rows))
         for i, row in enumerate(rows):
             for j, col_name in enumerate(self.shown):
                 self.setItem(i, j, qtw.QTableWidgetItem(f"{row[col_name]}"))
@@ -153,9 +259,9 @@ class Table(qtw.QTableWidget):
         if self.sort_column > -1:
             self.sortItems(
                 self.sort_column,
-                qtc.Qt.SortOrder.AscendingOrder
+                qtc.Qt.SortOrder.AscendingOrder  # type: ignore
                 if self.view.sort_asc
-                else qtc.Qt.SortOrder.DescendingOrder,
+                else qtc.Qt.SortOrder.DescendingOrder,  # type: ignore
             )
 
 
@@ -180,11 +286,11 @@ class BookDialog(qtw.QDialog):
         self.setGeometry(self.left, self.top, self.w, self.h)
 
         # Buttons
-        buttons = qtw.QDialogButtonBox(
+        buttons = qtw.QDialogButtonBox(  # type: ignore
             qtw.QDialogButtonBox.Ok | qtw.QDialogButtonBox.Cancel,
         )
-        buttons.accepted.connect(self.accept)  # type: ignore
-        buttons.rejected.connect(self.reject)  # type: ignore
+        buttons.accepted.connect(self.accept)
+        buttons.rejected.connect(self.reject)
         self.buttons = buttons
 
         # Left form
@@ -223,7 +329,7 @@ class BookDialog(qtw.QDialog):
         # Reading/wishlist form
         right_form = qtw.QFormLayout()
         self.wread = qtw.QCheckBox()
-        self.wread.stateChanged.connect(self.read_changed)  # type: ignore
+        self.wread.stateChanged.connect(self.read_changed)
         right_form.addRow("Reading", self.wread)
 
         self.wstart = qtw.QDateEdit(qtc.QDate.currentDate())
@@ -232,10 +338,10 @@ class BookDialog(qtw.QDialog):
         self.wend.setCalendarPopup(True)
         right_form.addRow("Start", self.wstart)
         self.wfinished = qtw.QCheckBox()
-        self.wfinished.stateChanged.connect(self.read_changed)  # type: ignore
+        self.wfinished.stateChanged.connect(self.read_changed)
         right_form.addRow("Finished", self.wfinished)
         self.wdropped = qtw.QCheckBox()
-        self.wdropped.stateChanged.connect(self.read_changed)  # type: ignore
+        self.wdropped.stateChanged.connect(self.read_changed)
         right_form.addRow("Dropped", self.wdropped)
         right_form.addRow("End", self.wend)
         self.wreadnotes = qtw.QTextEdit()
@@ -255,7 +361,7 @@ class BookDialog(qtw.QDialog):
 
         # Owner form
         self.wowned = qtw.QCheckBox()
-        self.wowned.stateChanged.connect(self.owned_changed)  # type: ignore
+        self.wowned.stateChanged.connect(self.owned_changed)
         right_form.addRow("Owned", self.wowned)
         self.wplace = qtw.QLineEdit()
         right_form.addRow("Place", self.wplace)
@@ -313,7 +419,7 @@ class BookDialog(qtw.QDialog):
         ]
 
         for i in range(len(order) - 1):
-            qtw.QWidget.setTabOrder(order[i], order[i + 1])  # type: ignore
+            qtw.QWidget.setTabOrder(order[i], order[i + 1])
 
     def set_read_widgets_enabled(self, enable: bool) -> None:
         for w in self.read_widgets:
@@ -516,13 +622,13 @@ class ComboWidget(qtw.QWidget):
         self.options = options
 
         self.add = qtw.QPushButton("+")
-        self.add.clicked.connect(lambda x: self.make_combo())  # type: ignore
+        self.add.clicked.connect(lambda x: self.make_combo())
         self.add.setFixedSize(22, 22)
-        self.add.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)
+        self.add.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)  # type: ignore
         self.addgroup = qtw.QVBoxLayout()
         self.addgroup.addWidget(self.add)
         # addgroup.addStretch()
-        self.addgroup.setAlignment(qtc.Qt.AlignTop)  # type: ignore
+        self.addgroup.setAlignment(qtc.Qt.AlignTop)
         self.addgroup.setSpacing(0)
         self.addgroup.setContentsMargins(0, 0, 0, 0)
 
@@ -554,12 +660,13 @@ class ComboWidget(qtw.QWidget):
             self.combo_widget = widget
 
         def keyPressEvent(self, e: qtg.QKeyEvent) -> None:
-            if e.matches(qtg.QKeySequence.StandardKey.InsertLineSeparator):
+            if e.matches(qtg.QKeySequence.StandardKey.InsertLineSeparator):  # type: ignore
                 self.combo_widget.make_combo(focus=True)
             else:
                 super().keyPressEvent(e)
 
     def make_combo(self, text: str = "", focus: bool = False) -> None:
+        # FIXME maybe move the combo widget to a class
         combo_widget = qtw.QWidget()
         combo = ComboWidget.ComboBox(self)
         combo.insertItems(0, self.options)
@@ -567,7 +674,7 @@ class ComboWidget(qtw.QWidget):
         combo.setCurrentText(text)
         remove = qtw.QPushButton("-")
         remove.setFixedSize(22, 22)
-        remove.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)
+        remove.setFocusPolicy(qtc.Qt.FocusPolicy.ClickFocus)  # type: ignore
 
         layout = qtw.QHBoxLayout()
         layout.addWidget(combo)
@@ -585,7 +692,7 @@ class ComboWidget(qtw.QWidget):
             else:
                 combo.setCurrentText("")
 
-        remove.clicked.connect(rem)  # type: ignore
+        remove.clicked.connect(rem)
         self.combos.addWidget(combo_widget)
         if focus:
             combo.setFocus()

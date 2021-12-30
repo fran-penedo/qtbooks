@@ -1,4 +1,5 @@
 import json
+import re
 import datetime
 import os
 import sqlite3 as sqlite
@@ -620,3 +621,15 @@ class Controller(object):
         id = self.execute(query).fetchone()[0]
         obj.id = int(id)
         self._invalidate_caches()
+
+
+class RowFilter(object):
+    def __init__(self, exp: str) -> None:
+        self.exp = exp
+        self.regex = re.compile(exp, re.IGNORECASE)
+
+    def matches(self, row: Row) -> bool:
+        for v in row:
+            if self.regex.search(f"{v}") is not None:
+                return True
+        return False
