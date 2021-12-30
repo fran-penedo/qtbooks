@@ -188,18 +188,21 @@ class TableFilter(qtc.QObject):
         if exp == "":
             filtered_rows = self.table.view_rows
         else:
-            row_filter = model.RowFilter(exp)
-            filtered_rows = []
-
-            for row in self.table.view_rows:
-                self.mutex.lock()
-                if self.jobs > 1:
-                    self.jobs -= 1
+            try:
+                row_filter = model.RowFilter(exp)
+            except ValueError:
+                filtered_rows = self.table.view_rows
+            else:
+                filtered_rows = []
+                for row in self.table.view_rows:
+                    self.mutex.lock()
+                    if self.jobs > 1:
+                        self.jobs -= 1
+                        self.mutex.unlock()
+                        return
                     self.mutex.unlock()
-                    return
-                self.mutex.unlock()
-                if row_filter.matches(row):
-                    filtered_rows.append(row)
+                    if row_filter.matches(row):
+                        filtered_rows.append(row)
 
         self.filtered_rows = filtered_rows
         self.finished.emit()

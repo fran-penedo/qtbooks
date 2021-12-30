@@ -5,7 +5,7 @@ import os
 import sqlite3 as sqlite
 from functools import lru_cache
 from sqlite3 import Connection, Row
-from typing import Optional, Union
+from typing import Optional, Union, Iterator
 from PyQt5.QtGui import QDesktopServices
 
 import attr
@@ -628,10 +628,100 @@ class Controller(object):
 class RowFilter(object):
     def __init__(self, exp: str) -> None:
         self.exp = exp
-        self.regex = re.compile(exp, re.IGNORECASE)
+        self.regexes: dict[str, list[re.Pattern]] = dict()
+        for k, v in split_tokens(exp):
+            self.regexes.setdefault(k, []).append(re.compile(v, re.IGNORECASE))
 
     def matches(self, row: Row) -> bool:
-        for v in row:
-            if self.regex.search(f"{v}") is not None:
-                return True
-        return False
+        if "" in self.regexes:
+            for regex in self.regexes[""]:
+                match = False
+                for v in row:
+                    if regex.search(f"{v}") is not None:
+                        match = True
+                        break
+                if not match:
+                    return False
+
+        for k, v in self.regexes.items():
+            if k == "":
+                continue
+            if k not in row.keys():
+                return False
+            for regex in v:
+                if regex.search(f"{row[k]}") is None:
+                    return False
+
+        return True
+
+
+def split_tokens(exp: str) -> Iterator[tuple[str, str]]:
+    exp = exp + " "
+    j = 0
+    tagged = False
+    quote_open = False
+    quoted = False
+    blank = True
+    for i in range(len(exp)):
+        if exp[i] == ":":
+            if quote_open:
+                continue
+            if tagged:
+                raise ValueError("Malformed expression: extra colon at character {i}")
+            tagged = True
+            correct_quote = 1 if quoted else 0
+            tag = exp[j : i - correct_quote]
+            j = i + 1
+            quoted = False
+        elif exp[i] == '"':
+            if quoted:
+                raise ValueError(
+                    "Malformed expression: invalid character following closing quote at character {i}"
+                )
+            if quote_open:
+                quoted = True
+                quote_open = False
+            else:
+                quote_open = True
+                j = i + 1
+        elif exp[i] == " ":
+            if blank:
+                j = i + 1
+                continue
+            if quote_open:
+                continue
+            correct_quote = 1 if quoted else 0
+            if tagged:
+                yield tag, exp[j : i - correct_quote]
+            else:
+                yield "", exp[j : i - correct_quote]
+            j = i + 1
+            tagged = False
+            blank = True
+            quoted = False
+        else:
+            if quoted:
+                raise ValueError(
+                    "Malformed expression: invalid character following closing quote at character {i}"
+                )
+            blank = False
+
+
+def test_split_tokens() -> None:
+    exp = "foo"
+    assert list(split_tokens(exp)) == [("", "foo")]
+
+    exp = "foo bar"
+    assert list(split_tokens(exp)) == [("", "foo"), ("", "bar")]
+
+    exp = "  foo  bar  "
+    assert list(split_tokens(exp)) == [("", "foo"), ("", "bar")]
+
+    exp = "foo:bar"
+    assert list(split_tokens(exp)) == [("foo", "bar")]
+
+    exp = '"foo bar":"bar foo"'
+    assert list(split_tokens(exp)) == [("foo bar", "bar foo")]
+
+    exp = '"foo:bar":"bar foo"'
+    assert list(split_tokens(exp)) == [("foo:bar", "bar foo")]
