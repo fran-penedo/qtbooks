@@ -89,11 +89,14 @@ class App(qtw.QMainWindow):
             book_id = self.sender().rows[i]["id"]
         except ValueError:
             return
-        bookdiag = BookDialog(self.controller, self.controller.get_book(int(book_id)))
+        book = self.controller.get_book(int(book_id))
+        bookdiag = BookDialog(self.controller, book)
         if bookdiag.exec() == qtw.QDialog.Accepted:
             book = bookdiag.get_book()
             self.controller.update_book(book)
-            self.update_tables()
+        elif bookdiag.delete_book:
+            self.controller.delete_book(book)
+        self.update_tables()
 
     def add_book(self) -> None:
         bookdiag = BookDialog(self.controller)
@@ -168,7 +171,7 @@ class TableFilter(qtc.QObject):
     def __init__(self, table: "Table", thread: qtc.QThread) -> None:
         super().__init__()
         self.table = table
-        self.filtered_rows = self.table.rows
+        self.filtered_rows = self.table.view_rows
         self.jobs = 0
         self.mutex = qtc.QMutex()
         self.moveToThread(thread)
@@ -183,12 +186,12 @@ class TableFilter(qtc.QObject):
         logger.debug(f"Running filter with {exp=}")
 
         if exp == "":
-            filtered_rows = self.table.rows
+            filtered_rows = self.table.view_rows
         else:
             row_filter = model.RowFilter(exp)
             filtered_rows = []
 
-            for row in self.table.rows:
+            for row in self.table.view_rows:
                 self.mutex.lock()
                 if self.jobs > 1:
                     self.jobs -= 1
@@ -224,7 +227,7 @@ class Table(qtw.QTableWidget):
         self.controller = controller
 
         rows, header = self.controller.get_view(self.view)
-        self.rows = rows
+        self.view_rows = rows
         self.shown = [h for h in header if h not in self.view.hidden_cols]
         self.setColumnCount(len(self.shown))
         self.setHorizontalHeaderLabels(self.shown)
@@ -237,11 +240,11 @@ class Table(qtw.QTableWidget):
         self.filter_signal.connect(self.table_filter.filter)
         self.table_filter.finished.connect(self._update_row_view)
 
-        self.update_table()
+        self._update_row_view()
 
     def update_table(self) -> None:
         rows, _ = self.controller.get_view(self.view)
-        self.rows = rows
+        self.view_rows = rows
         self.filter("")
 
     def filter(self, exp: str) -> None:
@@ -249,12 +252,14 @@ class Table(qtw.QTableWidget):
         self.filter_signal.emit(exp)
 
     def _update_row_view(self) -> None:
-        rows = self.table_filter.filtered_rows
+        self.rows = self.table_filter.filtered_rows
 
-        self.setRowCount(len(rows))
-        for i, row in enumerate(rows):
+        self.setRowCount(len(self.rows))
+        for i, row in enumerate(self.rows):
             for j, col_name in enumerate(self.shown):
-                self.setItem(i, j, qtw.QTableWidgetItem(f"{row[col_name]}"))
+                item = qtw.QTableWidgetItem(f"{row[col_name]}")
+                item.setFlags(qtc.Qt.ItemFlag.ItemIsEnabled)  # type: ignore
+                self.setItem(i, j, item)
 
         if self.sort_column > -1:
             self.sortItems(
@@ -278,6 +283,7 @@ class BookDialog(qtw.QDialog):
         self.w = 640
         self.h = 480
         self.book = book
+        self.delete_book = False
         self.controller = controller
         self.initUI()
 
@@ -287,10 +293,15 @@ class BookDialog(qtw.QDialog):
 
         # Buttons
         buttons = qtw.QDialogButtonBox(  # type: ignore
-            qtw.QDialogButtonBox.Ok | qtw.QDialogButtonBox.Cancel,
+            qtw.QDialogButtonBox.Ok
+            | qtw.QDialogButtonBox.Cancel
+            | qtw.QDialogButtonBox.Discard,
         )
         buttons.accepted.connect(self.accept)
         buttons.rejected.connect(self.reject)
+        buttons.button(qtw.QDialogButtonBox.Discard).clicked.connect(
+            self.reject_and_delete_book
+        )
         self.buttons = buttons
 
         # Left form
@@ -393,6 +404,10 @@ class BookDialog(qtw.QDialog):
         self.update_data()
         self.set_tab_order()
         self.show()
+
+    def reject_and_delete_book(self) -> None:
+        self.delete_book = True
+        self.reject()
 
     def set_tab_order(self) -> None:
         order = [

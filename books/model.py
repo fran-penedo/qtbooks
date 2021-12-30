@@ -575,6 +575,7 @@ class Controller(object):
 
     def delete_book(self, book: Book) -> None:
         self.execute("delete from Books where id = ?", [book.id])
+        self.db.commit()
         self._invalidate_caches()
 
     def add_book(self, book: Book) -> None:
@@ -620,6 +621,7 @@ class Controller(object):
         logger.debug(query)
         id = self.execute(query).fetchone()[0]
         obj.id = int(id)
+        self.db.commit()
         self._invalidate_caches()
 
 
