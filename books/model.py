@@ -206,6 +206,7 @@ class BookReader(TableI):
     end: datetime.date = attr.ib(converter=_convert_date)
     read: bool = attr.ib(converter=bool)
     dropped: bool = attr.ib(converter=bool)
+    rating: int = attr.ib(converter=int)
     notes: str
 
 
@@ -449,7 +450,7 @@ class Controller(object):
             reading_rows = self.execute(
                 """select BookReaders.id as id,
                           json_object('id', Readers.id, 'name', name) as reader,
-                          start, end, dropped, read, notes
+                          start, end, dropped, read, notes, rating
                 from BookReaders join Readers on BookReaders.reader = Readers.id
                 where BookReaders.book = ?""",
                 [id],

@@ -313,7 +313,7 @@ class BookDialog(qtw.QDialog):
         )
         self.left = 10
         self.top = 10
-        self.w = 640
+        self.w = 800
         self.h = 480
         self.book = book
         self.delete_book = False
@@ -388,6 +388,9 @@ class BookDialog(qtw.QDialog):
         self.wdropped.stateChanged.connect(self.read_changed)
         right_form.addRow("Dropped", self.wdropped)
         right_form.addRow("End", self.wend)
+        self.wrating = qtw.QSpinBox()
+        self.wrating.setValue(0)
+        right_form.addRow("Rating", self.wrating)
         self.wreadnotes = qtw.QTextEdit()
         self.wreadnotes.setTabChangesFocus(True)
         right_form.addRow("Notes", self.wreadnotes)
@@ -396,6 +399,7 @@ class BookDialog(qtw.QDialog):
             self.wend,
             self.wfinished,
             self.wdropped,
+            self.wrating,
             self.wreadnotes,
         ]
         self.set_read_widgets_enabled(False)
@@ -457,6 +461,7 @@ class BookDialog(qtw.QDialog):
             self.wfinished,
             self.wdropped,
             self.wend,
+            self.wrating,
             self.wreadnotes,
             self.wwtr,
             self.wowned,
@@ -503,6 +508,7 @@ class BookDialog(qtw.QDialog):
         end = self.wend.date().toPyDate()
         finished = self.wfinished.isChecked()
         dropped = self.wdropped.isChecked()
+        rating = self.wrating.value()
         read_notes = self.wreadnotes.toPlainText()
 
         toread = self.wwtr.isChecked()
@@ -553,6 +559,7 @@ class BookDialog(qtw.QDialog):
             reading.end = end
             reading.read = finished
             reading.dropped = dropped
+            reading.rating = 0
             reading.notes = read_notes
         elif reading is not None and not read:
             book.readings.remove(reading)
@@ -566,6 +573,7 @@ class BookDialog(qtw.QDialog):
                     end,
                     finished,
                     dropped,
+                    rating,
                     read_notes,
                 )
             )
