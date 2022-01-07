@@ -31,9 +31,11 @@ class App(qtw.QMainWindow):
         self.setGeometry(self.left, self.top, self.w, self.h)
 
         self.show()
+        self.init_status_bar()
 
         if self.options.user.lower() in self.controller.get_all_readers():
             self.controller.change_user(self.options.user)
+            self.status_user.setText(f"User: {self.options.user}")
         else:
             self.select_user()
 
@@ -84,6 +86,16 @@ class App(qtw.QMainWindow):
         except TypeError:
             pass
 
+    def init_status_bar(self) -> None:
+        status = qtw.QStatusBar(self)
+
+        self.status_user = qtw.QLabel(status)
+        status.addPermanentWidget(self.status_user)
+        self.status_help = qtw.QLabel(status)
+        status.addWidget(self.status_help)
+
+        self.setStatusBar(status)
+
     def edit_book(self, i: int, j: int) -> None:
         try:
             book_id = self.sender().item(self.sender().currentRow(), 0).text()
@@ -110,14 +122,19 @@ class App(qtw.QMainWindow):
             t.update_table()
 
     def set_shortcuts(self) -> None:
-        add_new_book = qtw.QShortcut(qtg.QKeySequence("a"), self)
-        add_new_book.activated.connect(self.add_book)
-        select_user = qtw.QShortcut(qtg.QKeySequence("u"), self)
-        select_user.activated.connect(self.select_user)
-        import_from_url = qtw.QShortcut(qtg.QKeySequence("i"), self)
-        import_from_url.activated.connect(self.import_from_url)
-        filter_rows = qtw.QShortcut(qtg.QKeySequence("/"), self)
-        filter_rows.activated.connect(self.show_search_bar)
+        shortcuts = [
+            ("a", "Add book", self.add_book),
+            ("u", "Change user", self.select_user),
+            ("i", "Import", self.import_from_url),
+            ("/", "Filter", self.show_search_bar),
+        ]
+        for key, name, fun in shortcuts:
+            shortcut = qtw.QShortcut(qtg.QKeySequence(key), self)
+            shortcut.activated.connect(fun)
+
+        self.status_help.setText(
+            " , ".join(f"{key} -> {name}" for key, name, fun in shortcuts)
+        )
 
     def select_user(self) -> None:
         selected = False
@@ -143,6 +160,7 @@ class App(qtw.QMainWindow):
 
         self.controller.change_user(name)
         self.update_tables()
+        self.status_user.setText(f"User: {name}")
 
     def import_from_url(self) -> None:
         urls, ok = qtw.QInputDialog.getMultiLineText(
