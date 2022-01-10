@@ -815,6 +815,14 @@ def main(args: dict) -> None:
     app = qtw.QApplication(sys.argv)
     controller = model.Controller(options.db_file)
 
+    def excepthook(exc_type, exc_value, exc_tb):
+        traceback.print_exception(exc_type, exc_value, exc_tb)
+        controller.release_lock()
+        app.quit()
+
+    sys.excepthook = excepthook
+
     window = App(controller, options)
     app.aboutToQuit.connect(window.clean_up)
+
     sys.exit(app.exec_())
