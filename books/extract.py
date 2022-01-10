@@ -22,7 +22,7 @@ def import_book(url: str, controller: model.Controller) -> model.Book:
         try:
             text = requests.get(url, headers=HEADERS).text
             bs = BeautifulSoup(text, "lxml")
-            isbn = bs.find(property="books:isbn").content
+            isbn = bs.find(property="books:isbn")["content"]
             break
         except Exception as e:
             logger.warning(
