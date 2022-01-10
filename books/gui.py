@@ -171,6 +171,8 @@ class App(qtw.QMainWindow):
         users = self.controller.get_all_readers()
         if self.controller.user is not None:
             current = users.index(self.controller.user.name.lower())
+        else:
+            current = 0
 
         while not selected:
             name, ok = qtw.QInputDialog.getItem(

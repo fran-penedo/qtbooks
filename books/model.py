@@ -371,6 +371,7 @@ class Controller(object):
         self.db = create_db(fn)
         self.lockfile = Path(fn).parent / ".qtbooks.lock"
         self.readonly = not self.acquire_lock()
+        self.user: Optional[Reader] = None
 
     def acquire_lock(self) -> bool:
         if self.lockfile.exists():
@@ -397,6 +398,8 @@ class Controller(object):
 
     @lru_cache
     def get_view(self, view: config.View) -> tuple[list[Row], list[str]]:
+        if self.user is None:
+            raise ValueError("Can't obtain view without a logged in user")
         sql = view.query.format(user=self.user.id)
         cursor = self.execute(sql)
         rows = cursor.fetchall()
