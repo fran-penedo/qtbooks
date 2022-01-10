@@ -289,7 +289,7 @@ def init_db(db: Connection):
         db.execute(
             """
             create view BooksView as
-            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, notes
+            select Books.id, title, Authors.authors, Genres.genres, Publishers.publishers, first_published, edition, isbn, notes, strftime('%%m/%%d/%%Y', added, 'unixepoch') as added
             from Books left join
                     (
                     select b.id, group_concat(a.name) as authors
