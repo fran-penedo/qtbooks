@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 class App(qtw.QMainWindow):
     def __init__(self, controller: model.Controller, options: config.Options) -> None:
         super().__init__()
-        self.title = "Pyqtw.Qt5 simple window - pythonspot.com"
+        self.title = "QtBooks"
         self.left = 10
         self.top = 10
         self.w = 640
@@ -25,6 +25,9 @@ class App(qtw.QMainWindow):
         self.search_thread = qtc.QThread()
         self.search_thread.start()
         self.initUI()
+
+    def clean_up(self) -> None:
+        self.controller.release_lock()
 
     def initUI(self) -> None:
         self.setWindowTitle(self.title)
@@ -59,6 +62,10 @@ class App(qtw.QMainWindow):
         self.addToolBar(qtc.Qt.ToolBarArea.TopToolBarArea, self.search_bar)  # type: ignore
         self.hide_search_bar()
 
+        if self.controller.readonly:
+            notice = qtw.QMessageBox(self)
+            notice.setText("Lock file found, running in read-only mode")
+            notice.exec()
         self.set_shortcuts()
 
     def change_view(self, view: "Table"):
@@ -91,6 +98,11 @@ class App(qtw.QMainWindow):
 
         self.status_user = qtw.QLabel(status)
         status.addPermanentWidget(self.status_user)
+        if self.controller.readonly:
+            self.status_readonly = qtw.QLabel(status)
+            self.status_readonly.setText("READONLY MODE")
+            self.status_readonly.setStyleSheet("QLabel { color : red }")
+            status.addPermanentWidget(self.status_readonly)
         self.status_help = qtw.QLabel(status)
         status.addWidget(self.status_help)
 
@@ -103,14 +115,32 @@ class App(qtw.QMainWindow):
             return
         book = self.controller.get_book(int(book_id))
         bookdiag = BookDialog(self.controller, book)
+        msgstr = None
         if bookdiag.exec() == qtw.QDialog.Accepted:
-            book = bookdiag.get_book()
-            self.controller.update_book(book)
+            if self.controller.readonly:
+                msgstr = "Can't modify book in read-only mode"
+            else:
+                book = bookdiag.get_book()
+                self.controller.update_book(book)
         elif bookdiag.delete_book:
-            self.controller.delete_book(book)
-        self.update_tables()
+            if self.controller.readonly:
+                msgstr = "Can't delete book in read-only mode"
+            else:
+                self.controller.delete_book(book)
+        if msgstr is not None:
+            msg = qtw.QMessageBox(self)
+            msg.setText(msgstr)
+            msg.exec()
+            return
+        else:
+            self.update_tables()
 
     def add_book(self) -> None:
+        if self.controller.readonly:
+            msg = qtw.QMessageBox(self)
+            msg.setText("Can't add book in read-only mode")
+            msg.exec()
+            return
         bookdiag = BookDialog(self.controller)
         if bookdiag.exec() == qtw.QDialog.Accepted:
             book = bookdiag.get_book()
@@ -784,4 +814,5 @@ def main(args: dict) -> None:
     controller = model.Controller(options.db_file)
 
     window = App(controller, options)
+    app.aboutToQuit.connect(window.clean_up)
     sys.exit(app.exec_())

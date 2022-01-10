@@ -6,8 +6,9 @@ import sqlite3 as sqlite
 from functools import lru_cache
 from sqlite3 import Connection, Row
 from typing import Optional, Union, Iterator
-from PyQt5.QtGui import QDesktopServices
+from pathlib import Path
 
+from PyQt5.QtGui import QDesktopServices
 import attr
 
 from books import config
@@ -368,9 +369,24 @@ class Controller(object):
     def __init__(self, fn: str) -> None:
         # self.db = make_test_db(fn)
         self.db = create_db(fn)
+        self.lockfile = Path(fn).parent / ".qtbooks.lock"
+        self.readonly = not self.acquire_lock()
+
+    def acquire_lock(self) -> bool:
+        if self.lockfile.exists():
+            return False
+        else:
+            self.lockfile.touch()
+            return True
+
+    def release_lock(self) -> None:
+        if not self.readonly:
+            self.lockfile.unlink(missing_ok=True)
 
     def execute(self, sql: str, *args, **kwargs) -> sqlite.Cursor:
         logger.debug(f"sql: {sql}")
+        if self.readonly and not sql.lstrip()[:10].lower().startswith("select "):
+            raise ValueError("Write query can't be executed on readonly database")
         return self.db.execute(sql, *args, **kwargs)
 
     def change_user(self, user_name: str) -> None:
