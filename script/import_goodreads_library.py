@@ -25,6 +25,7 @@ def import_books(
 ) -> None:
     controller = model.Controller(output_db)
     controller.change_user(user)
+    assert controller.user is not None  # mypy hint
 
     with open(input_csv) as f:
         library = list(csv.reader(f, delimiter=","))
@@ -55,7 +56,7 @@ def import_books(
 
             book.readings.append(
                 model.BookReader(
-                    None, controller.user, book, date, date, True, False, ""
+                    None, controller.user, book, date, date, True, False, 0, ""
                 )
             )
         elif entry["Exclusive Shelf"] == "to-read":
