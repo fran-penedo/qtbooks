@@ -1,4 +1,5 @@
 import configparser
+from pkg_resources import resource_filename
 import getpass
 import json
 import os
@@ -10,9 +11,11 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-CONFIG_FILES = ["./qtbooks.cfg", "~/.qtbooks.cfg", "~/.config/qtbooks/config"]
+CONFIG_FILES = ["~/.config/qtbooks/config", "~/.qtbooks.cfg", "./qtbooks.cfg"]
 if os.environ.get("XDG_CONFIG_HOME"):
-    CONFIG_FILES.append(os.path.join(os.environ["XDG_CONFIG_HOME"], "qtbooks/config"))
+    CONFIG_FILES.insert(
+        0, os.path.join(os.environ["XDG_CONFIG_HOME"], "qtbooks/config")
+    )
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -39,9 +42,10 @@ class Options(object):
                 setattr(self, k, v)
 
 
-def parse_config_file(fn: str) -> Options:
+def parse_config_files(fns: list[str]) -> Options:
     config = configparser.ConfigParser()
-    config.read(fn)
+    config.read_file(open(resource_filename("qtbooks", "../qtbooks.cfg")))
+    config.read(fns)
     options = Options()
 
     options.update(dict(config["options"]))
@@ -54,12 +58,9 @@ def parse_config_file(fn: str) -> Options:
 
 
 def parse_config(args: dict) -> Options:
-    for f in CONFIG_FILES:
-        try:
-            options = parse_config_file(f)
-            break
-        except FileNotFoundError:
-            pass
+    if args["config"] is not None:
+        CONFIG_FILES.append(args["config"])
+    options = parse_config_files(CONFIG_FILES)
 
     options.update(args)
 
