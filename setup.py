@@ -12,6 +12,7 @@ config = {
         "pyqt5>=5.15.6",
         "requests>=2.26.0",
         "click>=8.0.3",
+        "lxml>=4.7.1",
     ],
     "extras_require": {},
     "packages": find_packages(),
