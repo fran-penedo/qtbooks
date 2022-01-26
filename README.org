@@ -29,7 +29,8 @@
   #+end_src
   
   You can also supply the command line options through the configuration file,
-  [[file:qtbooks.cfg][qtbooks.cfg]].
+  [[file:qtbooks.cfg][qtbooks.cfg]]. You can copy the supplied configuration file to a standard location
+  (such as =~/.qtbooks.cfg=) or pass it with the command line option =--config=.
 
 * Creating views
   You can define your own custom views in the =[views]= section of the configuration file.
