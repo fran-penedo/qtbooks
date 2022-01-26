@@ -12,5 +12,8 @@ typing-extensions
 mypy
 
 #refactoring
-# importmagic
-# epc
+importmagic
+epc
+
+# debug
+ptvsd
