@@ -49,7 +49,7 @@
   Please use a file syncing service such as Nextcloud or Dropbox to share your database.
   QTBooks uses a simple lockfile system to prevent simultaneous writing. The lockfile
   will be saved in the same directory as the database file. Only remove it manually if
-  you are sure noone else is currently using QTBooks on the same database.
+  you are sure no one else is currently using QTBooks on the same database.
   
 * Copyright and Warranty Information
   This program is free software: you can redistribute it and/or modify it under the
