@@ -68,6 +68,8 @@ def import_books(
         controller.add_book(book)
         print(f"Imported {entry['Title']}")
 
+    controller.release_lock()
+
     print(f"Failed to import: {[entry['Title'] for entry in import_failed]}")
     print(f"Failed to get goodreads page: {[entry['Title'] for entry in gr_failed]}")
     if out_csv is not None:
