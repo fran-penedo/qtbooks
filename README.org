@@ -1,0 +1,66 @@
+#+TITLE: QTBooks: A Simple Library Management System
+  
+* What is QTBooks?
+  QTBooks is a simple management system for a book library with a QT graphical
+  interface. It is only intended for personal use; please use at your own peril.
+   
+* Features
+  - Multiple users.
+  - Add, remove and edit books.
+  - Import books from goodreads.
+  - Multiple default views which can be extended with custom ones.
+  - View filtering.
+   
+* Requirements
+  You need Python3.10 or newer and sqlite3.
+
+* Quickstart
+  Clone the repository and install using PIP:
+
+  #+begin_src sh
+    git clone https://github.com/franpenedo/qtbooks.git
+    pip install qtbooks
+  #+end_src
+
+  Run the program with:
+
+  #+begin_src sh
+    qtbooks -u USER -f DB_FILE qtgui
+  #+end_src
+  
+  You can also supply the command line options through the configuration file,
+  [[file:qtbooks.cfg][qtbooks.cfg]].
+
+* Creating views
+  You can define your own custom views in the =[views]= section of the configuration file.
+  Each view has a shortcut, a list of hidden columns, a default sorting column and a SQL
+  query.
+
+* Filtering
+  Pressing =/= in a view will allow you to filter the rows using python regular
+  expressions. Any row with any of its columns matching the regex (at any point; use =^=
+  and =$= if you want to match from beginning or end of string) will be shown. Using the
+  syntax =col:regex= will restrict matching to the column =col=. If you need whitespace,
+  surround the regex with double quotes. Multiple regexes will be combined in
+  conjunction. Disjunction is not supported.
+
+* Using a database from multiple machines
+  Please use a file syncing service such as Nextcloud or Dropbox to share your database.
+  QTBooks uses a simple lockfile system to prevent simultaneous writing. The lockfile
+  will be saved in the same directory as the database file. Only remove it manually if
+  you are sure noone else is currently using QTBooks on the same database.
+  
+* Copyright and Warranty Information
+  This program is free software: you can redistribute it and/or modify it under the
+  terms of the GNU General Public License as published by the Free Software Foundation,
+  either version 3 of the License, or (at your option) any later version.
+
+  This program is distributed in the hope that it will be useful, but WITHOUT ANY
+  WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS FOR A
+  PARTICULAR PURPOSE. See the GNU General Public License for more details.
+
+  You should have received a copy of the GNU General Public License along with this
+  program. If not, see [[https://www.gnu.org/licenses/]].
+
+  Copyright (C) 2021-2022, Francisco Penedo Alvarez (contact@franpenedo.com)
+
