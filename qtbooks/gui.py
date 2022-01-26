@@ -4,9 +4,10 @@ from typing import Optional
 import traceback
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
-from qtbooks import model, config, extract
+from qtbooks import model, config, extract, LOGGER_DEBUG_CONFIG
 
 import logging
+import logging.config
 
 logger = logging.getLogger(__name__)
 
@@ -806,12 +807,15 @@ class ComboWidget(qtw.QWidget):
 
 
 def main(args: dict) -> None:
-    import logging.config
-    from qtbooks import LOGGER_DEBUG_CONFIG
-
     logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
 
     options = config.parse_config(args)
+    rootlogger = logging.getLogger("qtbooks")
+    if options.verbose:
+        rootlogger.setLevel(logging.DEBUG)
+    else:
+        rootlogger.setLevel(logging.INFO)
+
     app = qtw.QApplication(sys.argv)
     controller = model.Controller(options.db_file)
 

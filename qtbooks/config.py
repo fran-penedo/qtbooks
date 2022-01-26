@@ -31,6 +31,7 @@ class Options(object):
     user: str = getpass.getuser()
     db_file: str = "./qtbooks.sqlite"
     views: list[View] = attr.ib(factory=list)
+    verbose: bool = False
 
     def update(self, d: dict) -> None:
         for k, v in d.items():
