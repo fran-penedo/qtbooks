@@ -1,6 +1,6 @@
 import logging
 
-logger = logging.getLogger("books")
+logger = logging.getLogger("qtbooks")
 logger.addHandler(logging.NullHandler())
 
 import sys
@@ -21,7 +21,7 @@ LOGGER_DEBUG_CONFIG = {
         }
     },
     "loggers": {
-        "books": {
+        "qtbooks": {
             "handlers": ["console"],
             "level": "DEBUG",
             "propagate": True,

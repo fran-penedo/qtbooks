@@ -5,7 +5,7 @@ from typing import Optional
 
 import click
 
-from books import model, extract
+from qtbooks import model, extract
 
 
 @click.command()
@@ -79,8 +79,8 @@ def import_books(
 if __name__ == "__main__":
     import logging
     import logging.config
-    from books import LOGGER_DEBUG_CONFIG
+    from qtbooks import LOGGER_DEBUG_CONFIG
 
     logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
-    logging.getLogger("books").setLevel(logging.WARNING)
+    logging.getLogger("qtbooks").setLevel(logging.WARNING)
     import_books()
