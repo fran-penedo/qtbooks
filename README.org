@@ -18,8 +18,8 @@
   Clone the repository and install using PIP:
 
   #+begin_src sh
-    git clone https://github.com/franpenedo/qtbooks.git
-    pip install qtbooks
+    git clone https://github.com/fran-penedo/qtbooks.git
+    pip install ./qtbooks
   #+end_src
 
   Run the program with:
