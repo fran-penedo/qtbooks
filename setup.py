@@ -17,7 +17,7 @@ config = {
     "extras_require": {},
     "packages": find_packages(),
     "scripts": [],
-    "entry_points": {"console_scripts": ["qtbooks=qtbooks.cli.cli"]},
+    "entry_points": {"console_scripts": ["qtbooks=qtbooks.cli:cli"]},
     "name": "qtbooks",
 }
 
