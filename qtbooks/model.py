@@ -11,7 +11,7 @@ from pathlib import Path
 from PyQt5.QtGui import QDesktopServices
 import attr
 
-from books import config
+from qtbooks import config
 
 import logging
 

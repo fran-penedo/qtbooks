@@ -4,7 +4,7 @@ import re
 from typing import Iterator
 import logging
 
-from books import model
+from qtbooks import model
 import requests
 from bs4 import BeautifulSoup
 from requests.compat import urljoin

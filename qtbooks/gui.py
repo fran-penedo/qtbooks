@@ -4,7 +4,7 @@ from typing import Optional
 import traceback
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
-from books import model, config, extract
+from qtbooks import model, config, extract
 
 import logging
 
@@ -807,7 +807,7 @@ class ComboWidget(qtw.QWidget):
 
 def main(args: dict) -> None:
     import logging.config
-    from books import LOGGER_DEBUG_CONFIG
+    from qtbooks import LOGGER_DEBUG_CONFIG
 
     logging.config.dictConfig(LOGGER_DEBUG_CONFIG)
 

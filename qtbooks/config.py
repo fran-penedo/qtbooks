@@ -10,9 +10,9 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-CONFIG_FILES = ["./books.cfg", "~/.books.cfg", "~/.config/books/config"]
+CONFIG_FILES = ["./qtbooks.cfg", "~/.qtbooks.cfg", "~/.config/qtbooks/config"]
 if os.environ.get("XDG_CONFIG_HOME"):
-    CONFIG_FILES.append(os.path.join(os.environ["XDG_CONFIG_HOME"], "books/config"))
+    CONFIG_FILES.append(os.path.join(os.environ["XDG_CONFIG_HOME"], "qtbooks/config"))
 
 
 @attr.s(auto_attribs=True, frozen=True)
@@ -29,7 +29,7 @@ class View(object):
 @attr.s(auto_attribs=True)
 class Options(object):
     user: str = getpass.getuser()
-    db_file: str = "./books.sqlite"
+    db_file: str = "./qtbooks.sqlite"
     views: list[View] = attr.ib(factory=list)
 
     def update(self, d: dict) -> None:

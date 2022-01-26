@@ -1,6 +1,6 @@
 import click
 
-from books import gui, model
+from qtbooks import gui, model
 
 
 @click.group()
