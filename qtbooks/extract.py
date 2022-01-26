@@ -23,6 +23,8 @@ def import_book(url: str, controller: model.Controller) -> model.Book:
             text = requests.get(url, headers=HEADERS).text
             bs = BeautifulSoup(text, "lxml")
             isbn = bs.find(property="books:isbn")["content"]
+            if isbn.lower() == "null":
+                isbn = None
             break
         except Exception as e:
             logger.warning(
