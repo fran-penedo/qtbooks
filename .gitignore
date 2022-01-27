@@ -4,3 +4,4 @@ cover/
 tags
 *.egg-info
 /.noseids
+build/
