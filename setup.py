@@ -5,7 +5,7 @@ config = {
     "url": "",
     "author": "Fran Penedo",
     "author_email": "fran@franpenedo.com",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "install_requires": [
         "attrs>=21.2.0",
         "beautifulsoup4>=4.10.0",

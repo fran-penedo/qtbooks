@@ -12,7 +12,7 @@
   - View filtering.
    
 * Requirements
-  You need Python3.10 or newer and sqlite3.
+  You need Python3.8 or newer and sqlite3.
 
 * Quickstart
   Clone the repository and install using PIP:
