@@ -264,7 +264,7 @@ def create_db(fn: str) -> Connection:
     db.row_factory = sqlite.Row
 
     if (
-        db.execute("SELECT name from sqlite_schema where name = 'Books'").fetchone()
+        db.execute("SELECT name from sqlite_master where name = 'Books'").fetchone()
         is None
     ):
         init_db(db)
