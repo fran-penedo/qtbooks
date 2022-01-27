@@ -5,7 +5,7 @@ import os
 import sqlite3 as sqlite
 from functools import lru_cache
 from sqlite3 import Connection, Row
-from typing import Optional, Union, Iterator
+from typing import Optional, Union, Iterator, List, Tuple, Dict
 from pathlib import Path
 
 from PyQt5.QtGui import QDesktopServices
@@ -40,10 +40,10 @@ def _convert_date(date: Union[datetime.date, str]) -> Optional[datetime.date]:
 class TableI(object):
     id: Optional[int]
 
-    def values(self) -> list[str]:
+    def values(self) -> List[str]:
         return [_value_from_att(self, att) for att in attr.fields(self.__class__)]
 
-    def columns(self) -> list[str]:
+    def columns(self) -> List[str]:
         return [att.name for att in attr.fields(self.__class__)]
 
 
@@ -79,56 +79,56 @@ class Book(TableI):
         self.has_dirty_relations = False
 
     @property
-    def authors(self) -> list["BookAuthor"]:
+    def authors(self) -> List["BookAuthor"]:
         return self._authors
 
     @authors.setter
-    def authors(self, value: list["BookAuthor"]) -> None:
+    def authors(self, value: List["BookAuthor"]) -> None:
         self._authors = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
-    def genres(self) -> list["BookGenre"]:
+    def genres(self) -> List["BookGenre"]:
         return self._genres
 
     @genres.setter
-    def genres(self, value: list["BookGenre"]) -> None:
+    def genres(self, value: List["BookGenre"]) -> None:
         self._genres = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
-    def publishers(self) -> list["BookPublisher"]:
+    def publishers(self) -> List["BookPublisher"]:
         return self._publishers
 
     @publishers.setter
-    def publishers(self, value: list["BookPublisher"]) -> None:
+    def publishers(self, value: List["BookPublisher"]) -> None:
         self._publishers = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
-    def readings(self) -> list["BookReader"]:
+    def readings(self) -> List["BookReader"]:
         return self._readings
 
     @readings.setter
-    def readings(self, value: list["BookReader"]) -> None:
+    def readings(self, value: List["BookReader"]) -> None:
         self._readings = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
-    def owners(self) -> list["BookOwner"]:
+    def owners(self) -> List["BookOwner"]:
         return self._owners
 
     @owners.setter
-    def owners(self, value: list["BookOwner"]) -> None:
+    def owners(self, value: List["BookOwner"]) -> None:
         self._owners = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
     @property
-    def wishlists(self) -> list["Wishlist"]:
+    def wishlists(self) -> List["Wishlist"]:
         return self._wishlists
 
     @wishlists.setter
-    def wishlists(self, value: list["Wishlist"]) -> None:
+    def wishlists(self, value: List["Wishlist"]) -> None:
         self._wishlists = Book.RelationList(value, self)
         self.has_dirty_relations = True
 
@@ -397,7 +397,7 @@ class Controller(object):
         self._invalidate_caches()
 
     @lru_cache
-    def get_view(self, view: config.View) -> tuple[list[Row], list[str]]:
+    def get_view(self, view: config.View) -> Tuple[List[Row], List[str]]:
         if self.user is None:
             raise ValueError("Can't obtain view without a logged in user")
         sql = view.query.format(user=self.user.id)
@@ -407,7 +407,7 @@ class Controller(object):
         return rows, header
 
     @lru_cache
-    def get_all_books(self) -> list[Row]:
+    def get_all_books(self) -> List[Row]:
         rows = self.execute(
             """
             select BooksView.id, title, authors, genres, publishers, first_published, edition, notes
@@ -430,7 +430,7 @@ class Controller(object):
         return self.get_book(book_row["id"])
 
     @lru_cache
-    def get_books_title(self, title: str) -> list[Book]:
+    def get_books_title(self, title: str) -> List[Book]:
         try:
             book_rows = self.execute(
                 "select id from Books where title = ?", [title]
@@ -538,19 +538,19 @@ class Controller(object):
         return BookPublisher(None, book=book, publisher=publisher)
 
     @lru_cache
-    def get_all_authors(self) -> list[str]:
+    def get_all_authors(self) -> List[str]:
         return [r["name"] for r in self.execute("select name from Authors")]
 
     @lru_cache
-    def get_all_genres(self) -> list[str]:
+    def get_all_genres(self) -> List[str]:
         return [r["name"] for r in self.execute("select name from Genres")]
 
     @lru_cache
-    def get_all_publishers(self) -> list[str]:
+    def get_all_publishers(self) -> List[str]:
         return [r["name"] for r in self.execute("select name from Publishers")]
 
     @lru_cache
-    def get_all_readers(self) -> list[str]:
+    def get_all_readers(self) -> List[str]:
         return [r["name"].lower() for r in self.execute("select name from Readers")]
 
     def _invalidate_caches(self) -> None:
@@ -648,7 +648,7 @@ class Controller(object):
 class RowFilter(object):
     def __init__(self, exp: str) -> None:
         self.exp = exp
-        self.regexes: dict[str, list[re.Pattern]] = dict()
+        self.regexes: Dict[str, List[re.Pattern]] = dict()
         for k, v in split_tokens(exp):
             self.regexes.setdefault(k, []).append(re.compile(v, re.IGNORECASE))
 
@@ -675,7 +675,7 @@ class RowFilter(object):
         return True
 
 
-def split_tokens(exp: str) -> Iterator[tuple[str, str]]:
+def split_tokens(exp: str) -> Iterator[Tuple[str, str]]:
     exp = exp + " "
     j = 0
     tagged = False

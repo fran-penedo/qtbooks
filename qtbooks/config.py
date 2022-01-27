@@ -3,6 +3,7 @@ from pkg_resources import resource_filename
 import getpass
 import json
 import os
+from typing import List, Tuple
 
 import attr
 
@@ -23,8 +24,8 @@ class View(object):
     name: str
     query: str
     shortcut: str = ""
-    hidden_cols: tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
-    shown_cols: tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
+    hidden_cols: Tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
+    shown_cols: Tuple[str, ...] = attr.ib(factory=tuple, converter=tuple)
     sort_col: str = "id"
     sort_asc: bool = True
 
@@ -33,7 +34,7 @@ class View(object):
 class Options(object):
     user: str = getpass.getuser()
     db_file: str = "./qtbooks.sqlite"
-    views: list[View] = attr.ib(factory=list)
+    views: List[View] = attr.ib(factory=list)
     verbose: bool = False
 
     def update(self, d: dict) -> None:
@@ -42,7 +43,7 @@ class Options(object):
                 setattr(self, k, v)
 
 
-def parse_config_files(fns: list[str]) -> Options:
+def parse_config_files(fns: List[str]) -> Options:
     config = configparser.ConfigParser()
     config.read_file(open(resource_filename("qtbooks", "../qtbooks.cfg")))
     config.read(fns)

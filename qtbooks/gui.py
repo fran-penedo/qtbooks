@@ -1,6 +1,6 @@
 import sys
 import datetime
-from typing import Optional
+from typing import Optional, List
 import traceback
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
@@ -22,7 +22,7 @@ class App(qtw.QMainWindow):
         self.h = 480
         self.controller = controller
         self.options = options
-        self.view_pages: list[Table] = []
+        self.view_pages: List[Table] = []
         self.search_thread = qtc.QThread()
         self.search_thread.start()
         self.initUI()
@@ -724,7 +724,7 @@ class BookDialog(qtw.QDialog):
 class ComboWidget(qtw.QWidget):
     combobox_made = qtc.pyqtSignal()
 
-    def __init__(self, options: list[str]) -> None:
+    def __init__(self, options: List[str]) -> None:
         super().__init__()
         self.options = options
 
@@ -753,10 +753,10 @@ class ComboWidget(qtw.QWidget):
         while self.combos.takeAt(0):
             pass
 
-    def get_all(self) -> list[str]:
+    def get_all(self) -> List[str]:
         return [c.currentText() for c in self.get_all_combos() if c.currentText() != ""]
 
-    def get_all_combos(self) -> list[qtw.QComboBox]:
+    def get_all_combos(self) -> List[qtw.QComboBox]:
         return [
             self.combos.itemAt(i).widget().combo for i in range(self.combos.count())
         ]
