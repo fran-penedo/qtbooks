@@ -637,9 +637,17 @@ class Controller(object):
             self._insert_obj(item)
 
     def _insert_obj(self, obj: TableI):
-        query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
-        logger.debug(query)
-        id = self.execute(query).fetchone()[0]
+        # query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
+        query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())})"""
+        # id = self.execute(query).fetchone()[0]
+        self.execute(query)
+        idquery = f"""select id from {obj.__class__.__name__}s
+                      where {" and ".join(
+                        f"{col} = {val}"
+                        for col, val in zip(obj.columns(), obj.values())
+                        if col != "id")}
+                      order by id desc"""
+        id = self.execute(idquery).fetchone()[0]
         obj.id = int(id)
         self.db.commit()
         self._invalidate_caches()
