@@ -269,6 +269,10 @@ def create_db(fn: str) -> Connection:
     ):
         init_db(db)
 
+    db.execute("PRAGMA foreign_keys = ON")
+    if db.execute("PRAGMA foreign_keys").fetchone()[0] != 1:
+        raise Exception("SQLite installation does not support foreign keys")
+
     return db
 
 
