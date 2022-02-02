@@ -4,6 +4,7 @@ import getpass
 import json
 import os
 from typing import List, Tuple
+from pathlib import Path
 
 import attr
 
@@ -46,7 +47,7 @@ class Options(object):
 def parse_config_files(fns: List[str]) -> Options:
     config = configparser.ConfigParser()
     config.read_file(open(resource_filename("qtbooks", "../qtbooks.cfg")))
-    config.read(fns)
+    config.read(Path(fn).expanduser().absolute() for fn in fns)
     options = Options()
 
     options.update(dict(config["options"]))
@@ -64,5 +65,7 @@ def parse_config(args: dict) -> Options:
     options = parse_config_files(CONFIG_FILES)
 
     options.update(args)
+
+    logger.debug(f"{options =}")
 
     return options

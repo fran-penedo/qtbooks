@@ -372,8 +372,9 @@ def make_test_db(fn: str = ":memory:") -> Connection:
 class Controller(object):
     def __init__(self, fn: str) -> None:
         # self.db = make_test_db(fn)
-        self.db = create_db(fn)
-        self.lockfile = Path(fn).parent / ".qtbooks.lock"
+        abs_fn = Path(fn).expanduser().absolute()
+        self.db = create_db(str(abs_fn))
+        self.lockfile = abs_fn.parent / ".qtbooks.lock"
         self.readonly = not self.acquire_lock()
         self.user: Optional[Reader] = None
 
