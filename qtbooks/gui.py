@@ -2,6 +2,7 @@ import sys
 import datetime
 from typing import Optional, List
 import traceback
+from pkg_resources import resource_filename
 
 from PyQt5 import QtWidgets as qtw, QtCore as qtc, QtGui as qtg
 from qtbooks import model, config, extract, LOGGER_DEBUG_CONFIG
@@ -33,6 +34,9 @@ class App(qtw.QMainWindow):
     def initUI(self) -> None:
         self.setWindowTitle(self.title)
         self.setGeometry(self.left, self.top, self.w, self.h)
+        self.setWindowIcon(
+            qtg.QIcon(resource_filename("qtbooks", "../resources/bookshelf.png"))
+        )
 
         self.show()
         self.init_status_bar()

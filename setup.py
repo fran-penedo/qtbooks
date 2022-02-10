@@ -16,7 +16,7 @@ config = {
     ],
     "extras_require": {},
     "packages": find_packages(),
-    "package_data": {"qtbooks": ["../qtbooks.cfg"]},
+    "package_data": {"qtbooks": ["../qtbooks.cfg", "../resources/bookshelf.png"]},
     "scripts": [],
     "entry_points": {"console_scripts": ["qtbooks=qtbooks.cli:cli"]},
     "name": "qtbooks",
