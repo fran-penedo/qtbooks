@@ -77,6 +77,18 @@ class App(qtw.QMainWindow):
         self.tabs.setCurrentWidget(view)
         self.hide_search_bar()
 
+    def stretch_table_columns(self) -> None:
+        if hasattr(self, "tabs"):
+            current = self.tabs.currentWidget()
+            for t in self.view_pages:
+                self.tabs.setCurrentWidget(t)
+                t.horizontalHeader().resizeSections(qtw.QHeaderView.Stretch)
+            self.tabs.setCurrentWidget(current)
+
+    def resizeEvent(self, event: qtg.QResizeEvent) -> None:
+        super().resizeEvent(event)
+        self.stretch_table_columns()
+
     class SearchBar(qtw.QLineEdit):
         hide_signal = qtc.pyqtSignal()
 
@@ -305,7 +317,7 @@ class Table(qtw.QTableWidget):
         header_widget.setContextMenuPolicy(
             qtc.Qt.ContextMenuPolicy.ActionsContextMenu  # type: ignore
         )
-        header_widget.setSectionResizeMode(qtw.QHeaderView.Stretch)
+        header_widget.setSectionResizeMode(qtw.QHeaderView.Interactive)
         header_widget.setSortIndicatorShown(True)
         # header_widget.sectionClicked.connect(self.sort_by_column)
         self.setSelectionBehavior(qtw.QTableWidget.SelectRows)
