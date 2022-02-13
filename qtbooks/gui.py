@@ -651,7 +651,10 @@ class BookDialog(qtw.QDialog):
         if wishlist is not None and not toread:
             book.wishlists.remove(wishlist)
         elif toread and wishlist is None:
-            book.wishlists.append(model.Wishlist(None, self.controller.user, book))
+            wishlisted = datetime.date.today()
+            book.wishlists.append(
+                model.Wishlist(None, wishlisted, self.controller.user, book)
+            )
 
         owner = next(
             (o for o in book.owners if o.owner.id == self.controller.user.id), None

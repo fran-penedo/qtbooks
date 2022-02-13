@@ -222,6 +222,7 @@ class BookOwner(TableI):
 
 @attr.s(auto_attribs=True)
 class Wishlist(TableI):
+    wishlisted: datetime.date = attr.ib(converter=_convert_date)
     reader: Reader = attr.ib(converter=reader_from_dict)
     book: Book = attr.ib(converter=book_from_dict)
 
@@ -488,7 +489,7 @@ class Controller(object):
                 [id],
             ).fetchall()
             wishlist_rows = self.execute(
-                """select Wishlists.id as id,
+                """select Wishlists.id as id, wishlisted,
                           json_object('id', Readers.id, 'name', name) as reader
                 from Wishlists join Readers on Wishlists.reader = Readers.id
                 where Wishlists.book = ?""",
@@ -643,7 +644,8 @@ class Controller(object):
 
     def _insert_obj(self, obj: TableI):
         # query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())}) returning id"""
-        query = f"""insert into {obj.__class__.__name__}s values ({" , ".join(obj.values())})"""
+        query = f"""insert into {obj.__class__.__name__}s ({" , ".join(obj.columns())})
+                    values ({" , ".join(obj.values())})"""
         # id = self.execute(query).fetchone()[0]
         self.execute(query)
         idquery = f"""select id from {obj.__class__.__name__}s
